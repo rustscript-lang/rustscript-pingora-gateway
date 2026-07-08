@@ -1,0 +1,10 @@
+let blocked_admin = path == "/admin" && tier != "pro";
+let canary = path == "/canary" && method == "GET";
+let decision = if blocked_admin => {
+    "deny:403:upgrade required"
+} else if canary => {
+    "route:canary-upstream"
+} else => {
+    "allow"
+};
+decision;

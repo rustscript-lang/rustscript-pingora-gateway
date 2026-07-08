@@ -1,0 +1,11 @@
+[package]
+name = "rustscript-pingora-gateway-policy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pingora = "0.8.1"
+vm = { package = "pd-vm", path = "../rustscript/pd-vm", default-features = false, features = ["runtime"] }
+
+[dev-dependencies]
+pretty_assertions = "1"
