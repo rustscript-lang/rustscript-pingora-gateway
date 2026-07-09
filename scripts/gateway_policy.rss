@@ -1,12 +1,20 @@
-fn gateway_decision(decision) -> string;
+use pingora;
 
-let blocked_admin = path == "/admin" && tier != "pro";
-let canary = path == "/canary" && method == "GET";
-let decision = if blocked_admin => {
-    "deny:403:upgrade required"
-} else if canary => {
-    "route:canary-upstream"
-} else => {
-    "allow"
-};
-gateway_decision(decision);
+let method: string = pingora::request::method();
+let path: string = pingora::request::path();
+let tier: string = pingora::request::header("x-user-tier");
+
+let request_marked: bool = pingora::request::insert_header("x-rustscript-checked", "true");
+let policy_marked: bool = pingora::response::insert_header("x-rustscript-policy", "gateway_policy");
+
+if path == "/admin" && tier != "pro" {
+    pingora::response::set_status(403);
+    pingora::response::insert_header("x-rustscript-deny-reason", "upgrade required");
+} else if path == "/canary" && method == "GET" {
+    pingora::response::set_status(200);
+    pingora::response::insert_header("x-rustscript-upstream", "canary-upstream");
+} else {
+    pingora::response::set_status(204);
+}
+
+pingora::response::status();

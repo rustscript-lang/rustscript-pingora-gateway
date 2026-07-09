@@ -5,6 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+pd-host-function = { path = "../rustscript/pd-vm/pd-host-function" }
 pingora = "0.8.1"
 vm = { package = "pd-vm", path = "../rustscript/pd-vm", default-features = false, features = ["runtime"] }
 

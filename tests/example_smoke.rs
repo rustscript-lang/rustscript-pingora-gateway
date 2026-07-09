@@ -18,7 +18,7 @@ fn decision_example_runs_end_to_end() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Deny { status: 403, reason: \"upgrade required\" }"),
+        stdout.contains("status=403, reason=upgrade required, request_checked=true"),
         "unexpected decision example stdout:\n{stdout}"
     );
 }

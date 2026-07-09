@@ -1,9 +1,9 @@
 use pingora::http::RequestHeader;
 use pretty_assertions::assert_eq;
-use rustscript_pingora_gateway_policy::{GatewayDecision, ScriptedGatewayPolicy};
+use rustscript_pingora_gateway_policy::ScriptedGatewayPolicy;
 
 #[test]
-fn rustscript_denies_pingora_admin_request_for_free_tier() {
+fn rustscript_controls_pingora_response_for_admin_request() {
     let policy = ScriptedGatewayPolicy::from_source(include_str!("../scripts/gateway_policy.rss"))
         .expect("policy should compile");
     let mut request = RequestHeader::build("GET", b"/admin", None).expect("request should build");
@@ -11,31 +11,49 @@ fn rustscript_denies_pingora_admin_request_for_free_tier() {
         .insert_header("x-user-tier", "free")
         .expect("header should insert");
 
-    let decision = policy
-        .evaluate_request(&request)
+    let response = policy
+        .evaluate_request(&mut request)
         .expect("policy should evaluate");
 
+    assert_eq!(response.status.as_u16(), 403);
     assert_eq!(
-        decision,
-        GatewayDecision::Deny {
-            status: 403,
-            reason: "upgrade required".to_string(),
-        }
+        response
+            .headers
+            .get("x-rustscript-deny-reason")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "upgrade required"
+    );
+    assert_eq!(
+        request
+            .headers
+            .get("x-rustscript-checked")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "true"
     );
 }
 
 #[test]
-fn rustscript_routes_pingora_canary_request_without_framework_fork() {
+fn rustscript_controls_pingora_response_headers_for_canary_route() {
     let policy = ScriptedGatewayPolicy::from_source(include_str!("../scripts/gateway_policy.rss"))
         .expect("policy should compile");
-    let request = RequestHeader::build("GET", b"/canary", None).expect("request should build");
+    let mut request = RequestHeader::build("GET", b"/canary", None).expect("request should build");
 
-    let decision = policy
-        .evaluate_request(&request)
+    let response = policy
+        .evaluate_request(&mut request)
         .expect("policy should evaluate");
 
+    assert_eq!(response.status.as_u16(), 200);
     assert_eq!(
-        decision,
-        GatewayDecision::Route("canary-upstream".to_string())
+        response
+            .headers
+            .get("x-rustscript-upstream")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "canary-upstream"
     );
 }

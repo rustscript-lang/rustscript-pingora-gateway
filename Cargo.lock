@@ -1090,6 +1090,7 @@ dependencies = [
 name = "rustscript-pingora-gateway-policy"
 version = "0.1.0"
 dependencies = [
+ "pd-host-function",
  "pd-vm",
  "pingora",
  "pretty_assertions",

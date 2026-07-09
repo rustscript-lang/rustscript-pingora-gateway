@@ -9,8 +9,22 @@ fn main() {
         .insert_header("x-user-tier", "free")
         .expect("tier header should insert");
 
-    let decision = policy
-        .evaluate_request(&request)
+    let response = policy
+        .evaluate_request(&mut request)
         .expect("policy should evaluate");
-    println!("{decision:?}");
+    let reason = response
+        .headers
+        .get("x-rustscript-deny-reason")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    println!(
+        "status={}, reason={}, request_checked={}",
+        response.status.as_u16(),
+        reason,
+        request
+            .headers
+            .get("x-rustscript-checked")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+    );
 }
