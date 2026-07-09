@@ -1,0 +1,36 @@
+use http;
+use proxy;
+use rate_limit;
+
+let path: string = http::request::get_path();
+let client: string = http::request::get_header("x-client-id");
+
+if !rate_limit::allow(client, 100, 60) {
+    http::response::set_status(429);
+    http::response::set_header("x-rustscript-action", "rate-limited");
+    http::response::set_body("rate limited");
+} else {
+    let exchange: int = http::exchange::default_upstream();
+    http::exchange::set_target(exchange, "127.0.0.1", 18080);
+    http::exchange::set_path(exchange, path);
+    http::exchange::set_header(exchange, "x-forwarded-by", "rustscript-pingora");
+
+    if http::request::get_header("x-stream") != "" {
+        http::exchange::send(exchange);
+        http::response::set_status(http::exchange::get_status(exchange));
+        http::response::set_header("content-type", http::exchange::get_header(exchange, "content-type"));
+        let mut body = "";
+        while !http::exchange::body::eof(exchange) {
+            body = body + http::exchange::body::next_chunk(exchange, 8);
+        }
+        http::response::set_body(body);
+        http::response::set_header("x-rustscript-action", "streaming-proxy");
+    } else {
+        let downstream: int = proxy::stream::downstream();
+        let upstream: int = proxy::stream::exchange(exchange);
+        let status: string = proxy::forward(downstream, upstream, 16);
+        http::response::set_status(200);
+        http::response::set_header("x-proxy-status", status);
+        http::response::set_header("x-rustscript-action", "native-proxy");
+    }
+}
