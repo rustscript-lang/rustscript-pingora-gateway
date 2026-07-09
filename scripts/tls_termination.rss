@@ -1,31 +1,27 @@
-use http;
-use runtime;
-use tcp;
-use tls;
-
-let downstream: int = tcp::stream::downstream();
-let scheme: string = http::request::get_scheme();
+use pingora;
+let downstream: int = pingora::tcp::downstream();
+let scheme: string = pingora::request::scheme();
 
 if scheme == "tcp" {
-    let prefix: string = tcp::stream::peek(downstream, 4);
+    let prefix: string = pingora::tcp::peek(downstream, 4);
     if prefix == "GET " || prefix == "POST" || prefix == "HEAD" {
-        http::downstream::attach_transport();
-        http::response::set_header("x-termination", "plain-http");
+        pingora::downstream::attach_http();
+        pingora::response::insert_header("x-termination", "plain-http");
     } else {
-        let session: int = tls::session::from_socket(downstream);
-        tls::session::set_alpn(session, "h2,http/1.1");
-        tls::session::set_sni(session, "gateway.local");
-        if tls::session::handshake(session) {
-            http::downstream::attach_transport();
-            http::response::set_header("x-termination", "tls");
-            http::response::set_header("x-tls-alpn", tls::session::get_alpn(session));
-            http::response::set_header("x-tls-peer", tls::session::get_peer_name(session));
+        let session: int = pingora::tls::accept(downstream);
+        pingora::tls::set_alpn(session, "h2,http/1.1");
+        pingora::tls::set_sni(session, "gateway.local");
+        if pingora::tls::handshake(session) {
+            pingora::downstream::attach_http();
+            pingora::response::insert_header("x-termination", "tls");
+            pingora::response::insert_header("x-tls-alpn", pingora::tls::alpn(session));
+            pingora::response::insert_header("x-tls-peer", pingora::tls::peer_name(session));
         } else {
-            tcp::stream::close(downstream);
-            runtime::exit();
+            pingora::tcp::close(downstream);
+            pingora::runtime::exit();
         }
     }
 }
 
-http::response::set_status(201);
-http::response::set_body(http::request::get_method() + "|" + http::request::get_path_with_query());
+pingora::response::set_status(201);
+pingora::response::set_body(pingora::request::method() + "|" + pingora::request::path_with_query());

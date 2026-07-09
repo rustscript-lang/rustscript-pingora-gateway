@@ -1,36 +1,33 @@
-use http;
-use proxy;
-use rate_limit;
+use pingora;
+let path: string = pingora::request::path();
+let client: string = pingora::request::header("x-client-id");
 
-let path: string = http::request::get_path();
-let client: string = http::request::get_header("x-client-id");
-
-if !rate_limit::allow(client, 100, 60) {
-    http::response::set_status(429);
-    http::response::set_header("x-rustscript-action", "rate-limited");
-    http::response::set_body("rate limited");
+if !pingora::limits::allow(client, 100, 60) {
+    pingora::response::set_status(429);
+    pingora::response::insert_header("x-rustscript-action", "rate-limited");
+    pingora::response::set_body("rate limited");
 } else {
-    let exchange: int = http::exchange::default_upstream();
-    http::exchange::set_target(exchange, "127.0.0.1", 18080);
-    http::exchange::set_path(exchange, path);
-    http::exchange::set_header(exchange, "x-forwarded-by", "rustscript-pingora");
+    let exchange: int = pingora::upstream::default();
+    pingora::upstream::set_peer(exchange, "127.0.0.1", 18080);
+    pingora::upstream::set_path(exchange, path);
+    pingora::upstream::insert_header(exchange, "x-forwarded-by", "rustscript-pingora");
 
-    if http::request::get_header("x-stream") != "" {
-        http::exchange::send(exchange);
-        http::response::set_status(http::exchange::get_status(exchange));
-        http::response::set_header("content-type", http::exchange::get_header(exchange, "content-type"));
+    if pingora::request::header("x-stream") != "" {
+        pingora::upstream::send(exchange);
+        pingora::response::set_status(pingora::upstream::status(exchange));
+        pingora::response::insert_header("content-type", pingora::upstream::header(exchange, "content-type"));
         let mut body = "";
-        while !http::exchange::body::eof(exchange) {
-            body = body + http::exchange::body::next_chunk(exchange, 8);
+        while !pingora::upstream::body_eof(exchange) {
+            body = body + pingora::upstream::body_next_chunk(exchange, 8);
         }
-        http::response::set_body(body);
-        http::response::set_header("x-rustscript-action", "streaming-proxy");
+        pingora::response::set_body(body);
+        pingora::response::insert_header("x-rustscript-action", "streaming-proxy");
     } else {
-        let downstream: int = proxy::stream::downstream();
-        let upstream: int = proxy::stream::exchange(exchange);
-        let status: string = proxy::forward(downstream, upstream, 16);
-        http::response::set_status(200);
-        http::response::set_header("x-proxy-status", status);
-        http::response::set_header("x-rustscript-action", "native-proxy");
+        let downstream: int = pingora::proxy::downstream_stream();
+        let upstream: int = pingora::proxy::upstream_stream(exchange);
+        let status: string = pingora::proxy::forward(downstream, upstream, 16);
+        pingora::response::set_status(200);
+        pingora::response::insert_header("x-proxy-status", status);
+        pingora::response::insert_header("x-rustscript-action", "native-proxy");
     }
 }

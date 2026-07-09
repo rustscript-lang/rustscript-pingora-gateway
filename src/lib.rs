@@ -95,17 +95,6 @@ struct TcpStreamModel {
 }
 
 #[derive(Debug, Clone)]
-struct UdpSocketModel {
-    present: bool,
-    phase: String,
-    local_addr: String,
-    peer_addr: String,
-    target: String,
-    recv_queue: VecDeque<String>,
-    sent: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
 struct TlsSessionModel {
     _socket: i64,
     present: bool,
@@ -135,18 +124,6 @@ struct WebSocketModel {
 }
 
 #[derive(Debug, Clone)]
-struct WebRtcModel {
-    present: bool,
-    phase: String,
-    ice_servers: String,
-    label: String,
-    remote_description: String,
-    text_queue: VecDeque<String>,
-    binary_queue: VecDeque<String>,
-    eof: bool,
-}
-
-#[derive(Debug, Clone)]
 struct ProxyStreamModel {
     _kind: String,
     _source_handle: i64,
@@ -160,10 +137,8 @@ struct GatewayRuntime {
     response: ResponseModel,
     exchanges: BTreeMap<i64, ExchangeModel>,
     tcp_streams: BTreeMap<i64, TcpStreamModel>,
-    udp_sockets: BTreeMap<i64, UdpSocketModel>,
     tls_sessions: BTreeMap<i64, TlsSessionModel>,
     websockets: BTreeMap<i64, WebSocketModel>,
-    webrtcs: BTreeMap<i64, WebRtcModel>,
     proxy_streams: BTreeMap<i64, ProxyStreamModel>,
     next_handle: i64,
     proxy_events: Vec<String>,
@@ -214,10 +189,8 @@ impl GatewayRuntime {
             response: ResponseModel::default(),
             exchanges: BTreeMap::new(),
             tcp_streams: BTreeMap::new(),
-            udp_sockets: BTreeMap::new(),
             tls_sessions: BTreeMap::new(),
             websockets: BTreeMap::new(),
-            webrtcs: BTreeMap::new(),
             proxy_streams: BTreeMap::new(),
             next_handle: 10,
             proxy_events: Vec::new(),
@@ -242,14 +215,6 @@ impl GatewayRuntime {
         runtime
             .websockets
             .insert(ws_upstream, WebSocketModel::default_upstream());
-        let rtc_downstream = runtime.alloc_handle();
-        runtime
-            .webrtcs
-            .insert(rtc_downstream, WebRtcModel::downstream());
-        let rtc_upstream = runtime.alloc_handle();
-        runtime
-            .webrtcs
-            .insert(rtc_upstream, WebRtcModel::default_upstream());
         let default_exchange = runtime.alloc_handle();
         runtime
             .exchanges
@@ -369,18 +334,6 @@ impl GatewayRuntime {
             .ok_or_else(|| VmError::HostError(format!("unknown WebSocket handle: {handle}")))
     }
 
-    fn rtc_mut(&mut self, handle: i64) -> VmResult<&mut WebRtcModel> {
-        self.webrtcs
-            .get_mut(&handle)
-            .ok_or_else(|| VmError::HostError(format!("unknown WebRTC handle: {handle}")))
-    }
-
-    fn rtc(&self, handle: i64) -> VmResult<&WebRtcModel> {
-        self.webrtcs
-            .get(&handle)
-            .ok_or_else(|| VmError::HostError(format!("unknown WebRTC handle: {handle}")))
-    }
-
     fn apply_request_mutations(&self, request: &mut RequestHeader) -> Result<(), String> {
         for (name, value) in &self.request.inserted_headers {
             request
@@ -447,20 +400,6 @@ impl TcpStreamModel {
     }
 }
 
-impl UdpSocketModel {
-    fn new() -> Self {
-        Self {
-            present: true,
-            phase: "new".to_string(),
-            local_addr: "127.0.0.1:0".to_string(),
-            peer_addr: String::new(),
-            target: String::new(),
-            recv_queue: VecDeque::from(["pong".to_string()]),
-            sent: Vec::new(),
-        }
-    }
-}
-
 impl TlsSessionModel {
     fn new(socket: i64) -> Self {
         Self {
@@ -498,33 +437,6 @@ impl WebSocketModel {
     fn downstream() -> Self {
         Self {
             phase: "downstream-upgrade".to_string(),
-            ..Self::new()
-        }
-    }
-    fn default_upstream() -> Self {
-        Self {
-            phase: "default-upstream".to_string(),
-            ..Self::new()
-        }
-    }
-}
-
-impl WebRtcModel {
-    fn new() -> Self {
-        Self {
-            present: true,
-            phase: "new".to_string(),
-            ice_servers: String::new(),
-            label: "data".to_string(),
-            remote_description: String::new(),
-            text_queue: VecDeque::new(),
-            binary_queue: VecDeque::new(),
-            eof: false,
-        }
-    }
-    fn downstream() -> Self {
-        Self {
-            phase: "downstream".to_string(),
             ..Self::new()
         }
     }
@@ -611,27 +523,25 @@ impl HostArgsFunction for DynamicGatewayHost {
 }
 
 fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
-    if name == "runtime::exit" {
+    if name == "pingora::runtime::exit" {
         return Ok(CallOutcome::Halt);
     }
     with_runtime(|runtime| match name {
-        "pingora::request::method" | "http::request::get_method" => {
-            ret(runtime.request.method.clone())
-        }
-        "pingora::request::path" | "http::request::get_path" => ret(runtime.request.path.clone()),
-        "http::request::get_id" => ret(runtime.request.id.clone()),
-        "http::request::get_query" => ret(runtime.request.query.clone()),
-        "http::request::get_scheme" => ret(runtime.request.scheme.clone()),
-        "http::request::get_host" => ret(runtime.request.host.clone()),
-        "http::request::get_client_ip" => ret(runtime.request.client_ip.clone()),
-        "http::request::get_http_version" => ret(runtime.request.version.clone()),
-        "http::request::get_port" => ret(runtime.request.port),
-        "http::request::get_path_with_query" => ret(path_with_query(
+        "pingora::request::method" => ret(runtime.request.method.clone()),
+        "pingora::request::path" => ret(runtime.request.path.clone()),
+        "pingora::request::id" => ret(runtime.request.id.clone()),
+        "pingora::request::query" => ret(runtime.request.query.clone()),
+        "pingora::request::scheme" => ret(runtime.request.scheme.clone()),
+        "pingora::request::host" => ret(runtime.request.host.clone()),
+        "pingora::request::client_ip" => ret(runtime.request.client_ip.clone()),
+        "pingora::request::version" => ret(runtime.request.version.clone()),
+        "pingora::request::port" => ret(runtime.request.port),
+        "pingora::request::path_with_query" => ret(path_with_query(
             &runtime.request.path,
             &runtime.request.query,
         )),
-        "http::request::get_body" => ret(runtime.request.body.clone()),
-        "pingora::request::header" | "http::request::get_header" => {
+        "pingora::request::body" => ret(runtime.request.body.clone()),
+        "pingora::request::header" => {
             let key = norm(str_arg(args, 0, "name")?);
             ret(runtime
                 .request
@@ -640,11 +550,11 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .cloned()
                 .unwrap_or_default())
         }
-        "http::request::get_headers" => ret(join_headers(&runtime.request.headers)),
-        "http::request::get_query_arg" => {
+        "pingora::request::headers" => ret(join_headers(&runtime.request.headers)),
+        "pingora::request::query_arg" => {
             ret(query_arg(&runtime.request.query, str_arg(args, 0, "name")?))
         }
-        "http::request::get_query_args" => ret(runtime.request.query.clone()),
+        "pingora::request::query_args" => ret(runtime.request.query.clone()),
         "pingora::request::insert_header" => {
             let name = norm(str_arg(args, 0, "name")?);
             let value = str_arg(args, 1, "value")?.to_string();
@@ -652,28 +562,28 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             runtime.request.inserted_headers.insert(name, value);
             ret(true)
         }
-        "http::downstream::attach_transport" => {
+        "pingora::downstream::attach_http" => {
             runtime.request.transport_attached = true;
             runtime.request.scheme = "http".to_string();
             ret(true)
         }
-        "pingora::response::set_status" | "http::response::set_status" => {
+        "pingora::response::set_status" => {
             runtime.response.status = int_arg(args, 0, "status")?;
             ret(true)
         }
-        "pingora::response::status" | "http::response::get_status" => ret(runtime.response.status),
-        "http::response::set_body" => {
+        "pingora::response::status" => ret(runtime.response.status),
+        "pingora::response::set_body" => {
             runtime.response.body = value_to_text(args.first(), "body")?;
             ret(true)
         }
-        "http::response::get_body" => ret(runtime.response.body.clone()),
-        "pingora::response::insert_header" | "http::response::set_header" => {
+        "pingora::response::body" => ret(runtime.response.body.clone()),
+        "pingora::response::insert_header" => {
             let name = norm(str_arg(args, 0, "name")?);
             let value = str_arg(args, 1, "value")?.to_string();
             runtime.response.headers.insert(name, vec![value]);
             ret(true)
         }
-        "http::response::add_header" => {
+        "pingora::response::append_header" => {
             let name = norm(str_arg(args, 0, "name")?);
             let value = str_arg(args, 1, "value")?.to_string();
             runtime
@@ -684,12 +594,12 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .push(value);
             ret(true)
         }
-        "http::response::clear_header" => {
+        "pingora::response::remove_header" => {
             let name = norm(str_arg(args, 0, "name")?);
             runtime.response.headers.remove(&name);
             ret(true)
         }
-        "http::response::get_header" => {
+        "pingora::response::header" => {
             let name = norm(str_arg(args, 0, "name")?);
             ret(runtime
                 .response
@@ -699,7 +609,7 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .cloned()
                 .unwrap_or_default())
         }
-        "http::response::get_headers" => {
+        "pingora::response::headers" => {
             let flat = runtime
                 .response
                 .headers
@@ -709,37 +619,37 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .join("\n");
             ret(flat)
         }
-        "http::exchange::new" => ret(runtime.new_exchange()),
-        "http::exchange::default_upstream" => ret(runtime.default_exchange_handle()),
-        "http::exchange::send" => {
+        "pingora::upstream::new" => ret(runtime.new_exchange()),
+        "pingora::upstream::default" => ret(runtime.default_exchange_handle()),
+        "pingora::upstream::send" => {
             let handle = int_arg(args, 0, "exchange")?;
             runtime.ensure_exchange_response(handle)?;
             ret(true)
         }
-        "http::exchange::set_header" => set_exchange_header(runtime, args, false),
-        "http::exchange::add_header" => set_exchange_header(runtime, args, true),
-        "http::exchange::clear_header" => {
+        "pingora::upstream::insert_header" => set_exchange_header(runtime, args, false),
+        "pingora::upstream::append_header" => set_exchange_header(runtime, args, true),
+        "pingora::upstream::remove_header" => {
             let handle = int_arg(args, 0, "exchange")?;
             let name = norm(str_arg(args, 1, "name")?);
             runtime.exchange_mut(handle)?.headers.remove(&name);
             ret(true)
         }
-        "http::exchange::set_method" => {
+        "pingora::upstream::set_method" => {
             set_exchange_field(runtime, args, |exchange, value| exchange.method = value)
         }
-        "http::exchange::set_path" => {
+        "pingora::upstream::set_path" => {
             set_exchange_field(runtime, args, |exchange, value| exchange.path = value)
         }
-        "http::exchange::set_query" => {
+        "pingora::upstream::set_query" => {
             set_exchange_field(runtime, args, |exchange, value| exchange.query = value)
         }
-        "http::exchange::set_scheme" => {
+        "pingora::upstream::set_scheme" => {
             set_exchange_field(runtime, args, |exchange, value| exchange.scheme = value)
         }
-        "http::exchange::set_body" => {
+        "pingora::upstream::set_body" => {
             set_exchange_field(runtime, args, |exchange, value| exchange.body = value)
         }
-        "http::exchange::set_query_arg" => {
+        "pingora::upstream::set_query_arg" => {
             let handle = int_arg(args, 0, "exchange")?;
             let key = str_arg(args, 1, "name")?;
             let value = str_arg(args, 2, "value")?;
@@ -747,7 +657,7 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             exchange.query = upsert_query_arg(&exchange.query, key, value);
             ret(true)
         }
-        "http::exchange::set_target" => {
+        "pingora::upstream::set_peer" => {
             let handle = int_arg(args, 0, "exchange")?;
             let host = str_arg(args, 1, "host")?.to_string();
             let port = int_arg(args, 2, "port")?;
@@ -756,18 +666,18 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             exchange.port = port;
             ret(true)
         }
-        "http::exchange::attach_tcp" | "http::exchange::attach_tls_plaintext" => {
+        "pingora::upstream::attach_tcp" | "pingora::upstream::attach_tls_plaintext" => {
             let handle = int_arg(args, 0, "exchange")?;
             let stream = int_arg(args, 1, "stream")?;
             runtime.exchange_mut(handle)?.attached_stream = Some(stream);
             ret(true)
         }
-        "http::exchange::get_status" => {
+        "pingora::upstream::status" => {
             let handle = int_arg(args, 0, "exchange")?;
             runtime.ensure_exchange_response(handle)?;
             ret(runtime.exchange(handle)?.response_status)
         }
-        "http::exchange::get_header" => {
+        "pingora::upstream::header" => {
             let handle = int_arg(args, 0, "exchange")?;
             let key = norm(str_arg(args, 1, "name")?);
             runtime.ensure_exchange_response(handle)?;
@@ -778,18 +688,18 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .cloned()
                 .unwrap_or_default())
         }
-        "http::exchange::get_headers" => {
+        "pingora::upstream::headers" => {
             let handle = int_arg(args, 0, "exchange")?;
             runtime.ensure_exchange_response(handle)?;
             ret(join_headers(&runtime.exchange(handle)?.response_headers))
         }
-        "http::exchange::get_body" => {
+        "pingora::upstream::body" => {
             let handle = int_arg(args, 0, "exchange")?;
             runtime.ensure_exchange_response(handle)?;
             ret(runtime.exchange(handle)?.response_body.clone())
         }
-        "http::exchange::get_http_version" => ret("HTTP/1.1".to_string()),
-        "http::exchange::body::next_chunk" => {
+        "pingora::upstream::version" => ret("HTTP/1.1".to_string()),
+        "pingora::upstream::body_next_chunk" => {
             let handle = int_arg(args, 0, "exchange")?;
             let size = int_arg(args, 1, "size")?.max(1) as usize;
             runtime.ensure_exchange_response(handle)?;
@@ -805,55 +715,55 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             exchange.body_cursor += end;
             ret(chunk)
         }
-        "http::exchange::body::eof" => {
+        "pingora::upstream::body_eof" => {
             let handle = int_arg(args, 0, "exchange")?;
             runtime.ensure_exchange_response(handle)?;
             let exchange = runtime.exchange(handle)?;
             ret(exchange.body_cursor >= exchange.response_body.len())
         }
-        "rate_limit::allow" => {
+        "pingora::limits::allow" => {
             let key = str_arg(args, 0, "key").unwrap_or("");
             ret(!key.contains("deny") && !key.contains("block"))
         }
-        "runtime::sleep" => ret(true),
-        "tcp::stream::downstream" => ret(10),
-        "tcp::stream::default_upstream" => ret(11),
-        "tcp::stream::new" => {
+        "pingora::runtime::sleep" => ret(true),
+        "pingora::tcp::downstream" => ret(10),
+        "pingora::tcp::default_upstream" => ret(11),
+        "pingora::tcp::new" => {
             let handle = runtime.alloc_handle();
             runtime.tcp_streams.insert(handle, TcpStreamModel::new());
             ret(handle)
         }
-        "tcp::stream::is_present" => ret(runtime
+        "pingora::tcp::is_present" => ret(runtime
             .tcp(int_arg(args, 0, "stream")?)
             .map(|s| s.present)
             .unwrap_or(false)),
-        "tcp::stream::bind" => {
+        "pingora::tcp::bind" => {
             let handle = int_arg(args, 0, "stream")?;
             let addr = str_arg(args, 1, "addr")?.to_string();
             runtime.tcp_mut(handle)?.local_addr = addr;
             ret(true)
         }
-        "tcp::stream::set_target" => {
+        "pingora::tcp::set_peer" => {
             let handle = int_arg(args, 0, "stream")?;
             let host = str_arg(args, 1, "host")?;
             let port = int_arg(args, 2, "port")?;
             runtime.tcp_mut(handle)?.target = format!("{host}:{port}");
             ret(true)
         }
-        "tcp::stream::connect" => {
+        "pingora::tcp::connect" => {
             let stream = runtime.tcp_mut(int_arg(args, 0, "stream")?)?;
             stream.phase = "connected".to_string();
             stream.peer_addr = stream.target.clone();
             ret(true)
         }
-        "tcp::stream::get_phase" => ret(runtime.tcp(int_arg(args, 0, "stream")?)?.phase.clone()),
-        "tcp::stream::get_local_addr" => {
+        "pingora::tcp::phase" => ret(runtime.tcp(int_arg(args, 0, "stream")?)?.phase.clone()),
+        "pingora::tcp::local_addr" => {
             ret(runtime.tcp(int_arg(args, 0, "stream")?)?.local_addr.clone())
         }
-        "tcp::stream::get_peer_addr" => {
+        "pingora::tcp::peer_addr" => {
             ret(runtime.tcp(int_arg(args, 0, "stream")?)?.peer_addr.clone())
         }
-        "tcp::stream::read" => {
+        "pingora::tcp::read" => {
             let handle = int_arg(args, 0, "stream")?;
             let size = int_arg(args, 1, "size")?.max(1) as usize;
             let stream = runtime.tcp_mut(handle)?;
@@ -868,7 +778,7 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             }
             ret(take)
         }
-        "tcp::stream::peek" => {
+        "pingora::tcp::peek" => {
             let handle = int_arg(args, 0, "stream")?;
             let size = int_arg(args, 1, "size")?.max(1) as usize;
             ret(runtime
@@ -878,97 +788,20 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .take(size)
                 .collect::<String>())
         }
-        "tcp::stream::write" => {
+        "pingora::tcp::write" => {
             let handle = int_arg(args, 0, "stream")?;
             let payload = value_to_text(args.get(1), "payload")?;
             runtime.tcp_mut(handle)?.written.push_str(&payload);
             ret(payload.len() as i64)
         }
-        "tcp::stream::eof" => ret(runtime.tcp(int_arg(args, 0, "stream")?)?.eof),
-        "tcp::stream::close" => {
+        "pingora::tcp::eof" => ret(runtime.tcp(int_arg(args, 0, "stream")?)?.eof),
+        "pingora::tcp::close" => {
             let stream = runtime.tcp_mut(int_arg(args, 0, "stream")?)?;
             stream.phase = "closed".to_string();
             stream.eof = true;
             ret(true)
         }
-        "udp::socket::new" => {
-            let handle = runtime.alloc_handle();
-            runtime.udp_sockets.insert(handle, UdpSocketModel::new());
-            ret(handle)
-        }
-        "udp::socket::downstream" | "udp::socket::default_upstream" => {
-            let handle = runtime.alloc_handle();
-            runtime.udp_sockets.insert(handle, UdpSocketModel::new());
-            ret(handle)
-        }
-        "udp::socket::is_present" => ret(runtime
-            .udp_sockets
-            .get(&int_arg(args, 0, "socket")?)
-            .map(|s| s.present)
-            .unwrap_or(false)),
-        "udp::socket::bind" => {
-            let handle = int_arg(args, 0, "socket")?;
-            let addr = str_arg(args, 1, "addr")?.to_string();
-            runtime
-                .udp_sockets
-                .get_mut(&handle)
-                .ok_or_else(|| VmError::HostError(format!("unknown UDP socket handle: {handle}")))?
-                .local_addr = addr;
-            ret(true)
-        }
-        "udp::socket::set_target" | "udp::socket::connect" => {
-            let handle = int_arg(args, 0, "socket")?;
-            let host = str_arg(args, 1, "host")?;
-            let port = int_arg(args, 2, "port")?;
-            let socket = runtime.udp_sockets.get_mut(&handle).ok_or_else(|| {
-                VmError::HostError(format!("unknown UDP socket handle: {handle}"))
-            })?;
-            socket.target = format!("{host}:{port}");
-            socket.phase = "connected".to_string();
-            socket.peer_addr = socket.target.clone();
-            ret(true)
-        }
-        "udp::socket::get_phase" => ret(runtime
-            .udp_sockets
-            .get(&int_arg(args, 0, "socket")?)
-            .map(|s| s.phase.clone())
-            .unwrap_or_default()),
-        "udp::socket::get_local_addr" => ret(runtime
-            .udp_sockets
-            .get(&int_arg(args, 0, "socket")?)
-            .map(|s| s.local_addr.clone())
-            .unwrap_or_default()),
-        "udp::socket::get_peer_addr" => ret(runtime
-            .udp_sockets
-            .get(&int_arg(args, 0, "socket")?)
-            .map(|s| s.peer_addr.clone())
-            .unwrap_or_default()),
-        "udp::socket::send_text" | "udp::socket::send_binary_base64" => {
-            let handle = int_arg(args, 0, "socket")?;
-            let payload = value_to_text(args.get(1), "payload")?;
-            runtime
-                .udp_sockets
-                .get_mut(&handle)
-                .ok_or_else(|| VmError::HostError(format!("unknown UDP socket handle: {handle}")))?
-                .sent
-                .push(payload.clone());
-            ret(payload.len() as i64)
-        }
-        "udp::socket::recv_text" | "udp::socket::recv_binary_base64" => {
-            let handle = int_arg(args, 0, "socket")?;
-            let socket = runtime.udp_sockets.get_mut(&handle).ok_or_else(|| {
-                VmError::HostError(format!("unknown UDP socket handle: {handle}"))
-            })?;
-            ret(socket.recv_queue.pop_front().unwrap_or_default())
-        }
-        "udp::socket::close" => {
-            let handle = int_arg(args, 0, "socket")?;
-            if let Some(socket) = runtime.udp_sockets.get_mut(&handle) {
-                socket.phase = "closed".to_string();
-            }
-            ret(true)
-        }
-        "tls::session::from_socket" => {
+        "pingora::tls::accept" => {
             let socket = int_arg(args, 0, "socket")?;
             let handle = runtime.alloc_handle();
             runtime
@@ -976,52 +809,52 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .insert(handle, TlsSessionModel::new(socket));
             ret(handle)
         }
-        "tls::session::is_present" => ret(runtime
+        "pingora::tls::is_present" => ret(runtime
             .tls(int_arg(args, 0, "session")?)
             .map(|s| s.present)
             .unwrap_or(false)),
-        "tls::session::handshake" => {
+        "pingora::tls::handshake" => {
             let session = runtime.tls_mut(int_arg(args, 0, "session")?)?;
             session.phase = "handshaked".to_string();
             session.peer_name = session.sni.clone();
             ret(true)
         }
-        "tls::session::set_alpn" => set_tls_field(runtime, args, |s, v| s.alpn = v),
-        "tls::session::set_sni" => set_tls_field(runtime, args, |s, v| s.sni = v),
-        "tls::session::set_verify" | "tls::session::set_verify_hostname" => {
+        "pingora::tls::set_alpn" => set_tls_field(runtime, args, |s, v| s.alpn = v),
+        "pingora::tls::set_sni" => set_tls_field(runtime, args, |s, v| s.sni = v),
+        "pingora::tls::set_verify" | "pingora::tls::set_verify_hostname" => {
             let session = runtime.tls_mut(int_arg(args, 0, "session")?)?;
             session.verify = bool_arg(args, 1, "enabled")?;
             ret(true)
         }
-        "tls::session::set_trusted_certificate"
-        | "tls::session::set_client_certificate"
-        | "tls::session::set_client_private_key"
-        | "tls::session::set_server_certificate"
-        | "tls::session::set_server_private_key"
-        | "tls::session::set_min_version"
-        | "tls::session::set_max_version" => ret(true),
-        "tls::session::get_peer_name" => {
+        "pingora::tls::set_trusted_certificate"
+        | "pingora::tls::set_client_certificate"
+        | "pingora::tls::set_client_private_key"
+        | "pingora::tls::set_server_certificate"
+        | "pingora::tls::set_server_private_key"
+        | "pingora::tls::set_min_version"
+        | "pingora::tls::set_max_version" => ret(true),
+        "pingora::tls::peer_name" => {
             ret(runtime.tls(int_arg(args, 0, "session")?)?.peer_name.clone())
         }
-        "tls::session::get_alpn" => ret(runtime.tls(int_arg(args, 0, "session")?)?.alpn.clone()),
-        "tls::session::get_phase" => ret(runtime.tls(int_arg(args, 0, "session")?)?.phase.clone()),
-        "tls::session::get_peer_certificate" => ret(runtime
+        "pingora::tls::alpn" => ret(runtime.tls(int_arg(args, 0, "session")?)?.alpn.clone()),
+        "pingora::tls::phase" => ret(runtime.tls(int_arg(args, 0, "session")?)?.phase.clone()),
+        "pingora::tls::peer_certificate" => ret(runtime
             .tls(int_arg(args, 0, "session")?)?
             .peer_certificate
             .clone()),
-        "tls::session::is_session_reused" => ret(runtime.tls(int_arg(args, 0, "session")?)?.reused),
-        "websocket::connection::new" => {
+        "pingora::tls::is_reused" => ret(runtime.tls(int_arg(args, 0, "session")?)?.reused),
+        "pingora::websocket::new" => {
             let handle = runtime.alloc_handle();
             runtime.websockets.insert(handle, WebSocketModel::new());
             ret(handle)
         }
-        "websocket::connection::downstream" => ret(12),
-        "websocket::connection::default_upstream" => ret(13),
-        "websocket::connection::is_present" => ret(runtime
+        "pingora::websocket::downstream" => ret(12),
+        "pingora::websocket::default_upstream" => ret(13),
+        "pingora::websocket::is_present" => ret(runtime
             .ws(int_arg(args, 0, "connection")?)
             .map(|ws| ws.present)
             .unwrap_or(false)),
-        "websocket::connection::set_target" => {
+        "pingora::websocket::set_peer" => {
             let handle = int_arg(args, 0, "connection")?;
             let host = str_arg(args, 1, "host")?.to_string();
             let port = int_arg(args, 2, "port")?;
@@ -1030,20 +863,18 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             ws.port = port;
             ret(true)
         }
-        "websocket::connection::set_path" => {
-            set_ws_field(runtime, args, |ws, value| ws.path = value)
-        }
-        "websocket::connection::set_header" => {
+        "pingora::websocket::set_path" => set_ws_field(runtime, args, |ws, value| ws.path = value),
+        "pingora::websocket::set_header" => {
             let handle = int_arg(args, 0, "connection")?;
             let name = norm(str_arg(args, 1, "name")?);
             let value = str_arg(args, 2, "value")?.to_string();
             runtime.ws_mut(handle)?.headers.insert(name, value);
             ret(true)
         }
-        "websocket::connection::set_subprotocols" => {
+        "pingora::websocket::set_subprotocols" => {
             set_ws_field(runtime, args, |ws, value| ws.subprotocols = value)
         }
-        "websocket::connection::connect" => {
+        "pingora::websocket::connect" => {
             let ws = runtime.ws_mut(int_arg(args, 0, "connection")?)?;
             ws.phase = "connected".to_string();
             ws.selected_subprotocol = ws
@@ -1055,14 +886,14 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .to_string();
             ret(true)
         }
-        "websocket::connection::get_phase" => {
+        "pingora::websocket::phase" => {
             ret(runtime.ws(int_arg(args, 0, "connection")?)?.phase.clone())
         }
-        "websocket::connection::get_subprotocol" => ret(runtime
+        "pingora::websocket::subprotocol" => ret(runtime
             .ws(int_arg(args, 0, "connection")?)?
             .selected_subprotocol
             .clone()),
-        "websocket::connection::send_text" => {
+        "pingora::websocket::send_text" => {
             let handle = int_arg(args, 0, "connection")?;
             let payload = str_arg(args, 1, "payload")?.to_string();
             let ws = runtime.ws_mut(handle)?;
@@ -1070,91 +901,33 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             ws.text_queue.push_back(payload);
             ret(true)
         }
-        "websocket::connection::read_text" => ret(runtime
+        "pingora::websocket::read_text" => ret(runtime
             .ws_mut(int_arg(args, 0, "connection")?)?
             .text_queue
             .pop_front()
             .unwrap_or_default()),
-        "websocket::connection::send_binary_base64" | "websocket::connection::send_binary" => {
+        "pingora::websocket::send_binary_base64" | "pingora::websocket::send_binary" => {
             let handle = int_arg(args, 0, "connection")?;
             let payload = value_to_text(args.get(1), "payload")?;
             runtime.ws_mut(handle)?.binary_queue.push_back(payload);
             ret(true)
         }
-        "websocket::connection::read_binary_base64" | "websocket::connection::read_binary" => {
+        "pingora::websocket::read_binary_base64" | "pingora::websocket::read_binary" => {
             ret(runtime
                 .ws_mut(int_arg(args, 0, "connection")?)?
                 .binary_queue
                 .pop_front()
                 .unwrap_or_default())
         }
-        "websocket::connection::eof" => ret(runtime.ws(int_arg(args, 0, "connection")?)?.eof),
-        "websocket::connection::close" => {
+        "pingora::websocket::eof" => ret(runtime.ws(int_arg(args, 0, "connection")?)?.eof),
+        "pingora::websocket::close" => {
             let ws = runtime.ws_mut(int_arg(args, 0, "connection")?)?;
             ws.phase = "closed".to_string();
             ws.eof = true;
             ret(true)
         }
-        "webrtc::connection::new" => {
-            let handle = runtime.alloc_handle();
-            runtime.webrtcs.insert(handle, WebRtcModel::new());
-            ret(handle)
-        }
-        "webrtc::connection::downstream" => ret(14),
-        "webrtc::connection::default_upstream" => ret(15),
-        "webrtc::connection::is_present" => ret(runtime
-            .rtc(int_arg(args, 0, "connection")?)
-            .map(|rtc| rtc.present)
-            .unwrap_or(false)),
-        "webrtc::connection::set_ice_servers" => {
-            set_rtc_field(runtime, args, |rtc, value| rtc.ice_servers = value)
-        }
-        "webrtc::connection::set_data_channel_label" => {
-            set_rtc_field(runtime, args, |rtc, value| rtc.label = value)
-        }
-        "webrtc::connection::set_remote_description" => {
-            set_rtc_field(runtime, args, |rtc, value| rtc.remote_description = value)
-        }
-        "webrtc::connection::create_offer" => ret("v=0\no=rustscript-pingora-offer".to_string()),
-        "webrtc::connection::create_answer" => ret("v=0\no=rustscript-pingora-answer".to_string()),
-        "webrtc::connection::connect" => {
-            runtime.rtc_mut(int_arg(args, 0, "connection")?)?.phase = "connected".to_string();
-            ret(true)
-        }
-        "webrtc::connection::get_phase" => {
-            ret(runtime.rtc(int_arg(args, 0, "connection")?)?.phase.clone())
-        }
-        "webrtc::connection::send_text" => {
-            let handle = int_arg(args, 0, "connection")?;
-            let payload = str_arg(args, 1, "payload")?.to_string();
-            runtime.rtc_mut(handle)?.text_queue.push_back(payload);
-            ret(true)
-        }
-        "webrtc::connection::read_text" => ret(runtime
-            .rtc_mut(int_arg(args, 0, "connection")?)?
-            .text_queue
-            .pop_front()
-            .unwrap_or_default()),
-        "webrtc::connection::send_binary_base64" => {
-            let handle = int_arg(args, 0, "connection")?;
-            let payload = value_to_text(args.get(1), "payload")?;
-            runtime.rtc_mut(handle)?.binary_queue.push_back(payload);
-            ret(true)
-        }
-        "webrtc::connection::read_binary_base64" => ret(runtime
-            .rtc_mut(int_arg(args, 0, "connection")?)?
-            .binary_queue
-            .pop_front()
-            .unwrap_or_default()),
-        "webrtc::connection::eof" => ret(runtime.rtc(int_arg(args, 0, "connection")?)?.eof),
-        "webrtc::connection::close" => {
-            let rtc = runtime.rtc_mut(int_arg(args, 0, "connection")?)?;
-            rtc.phase = "closed".to_string();
-            rtc.eof = true;
-            ret(true)
-        }
-        "proxy::stream::downstream" => ret(10),
-        "proxy::stream::exchange" => {
+        "pingora::proxy::downstream_stream" => ret(10),
+        "pingora::proxy::upstream_stream" => {
             let exchange = int_arg(args, 0, "exchange")?;
             runtime.ensure_exchange_response(exchange)?;
             let handle = runtime.alloc_handle();
@@ -1164,7 +937,7 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
                 .insert(handle, ProxyStreamModel::new("exchange", exchange, body));
             ret(handle)
         }
-        "proxy::stream::from_tcp" => {
+        "pingora::proxy::tcp_stream" => {
             let tcp = int_arg(args, 0, "stream")?;
             let handle = runtime.alloc_handle();
             runtime.proxy_streams.insert(
@@ -1173,7 +946,7 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             );
             ret(handle)
         }
-        "proxy::stream::from_tls_plaintext" => {
+        "pingora::proxy::tls_plaintext_stream" => {
             let tls = int_arg(args, 0, "session")?;
             let handle = runtime.alloc_handle();
             runtime.proxy_streams.insert(
@@ -1186,7 +959,7 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             );
             ret(handle)
         }
-        "proxy::stream::from_websocket_binary" => {
+        "pingora::proxy::websocket_binary_stream" => {
             let ws = int_arg(args, 0, "connection")?;
             let handle = runtime.alloc_handle();
             runtime.proxy_streams.insert(
@@ -1195,7 +968,10 @@ fn dispatch_host(name: &str, args: &[Value]) -> VmResult<CallOutcome> {
             );
             ret(handle)
         }
-        "proxy::pipe" | "proxy::bridge" | "proxy::forward" | "proxy::forward_native" => {
+        "pingora::proxy::pipe"
+        | "pingora::proxy::bridge"
+        | "pingora::proxy::forward"
+        | "pingora::proxy::forward_native" => {
             let downstream = int_arg(args, 0, "downstream")?;
             let upstream = int_arg(args, 1, "upstream")?;
             let buffer = runtime
@@ -1386,167 +1162,118 @@ fn set_ws_field(
     ret(true)
 }
 
-fn set_rtc_field(
-    runtime: &mut GatewayRuntime,
-    args: &[Value],
-    update: impl FnOnce(&mut WebRtcModel, String),
-) -> VmResult<CallOutcome> {
-    let handle = int_arg(args, 0, "connection")?;
-    let value = str_arg(args, 1, "value")?.to_string();
-    update(runtime.rtc_mut(handle)?, value);
-    ret(true)
-}
-
 const GATEWAY_HOST_FUNCTIONS: &[&str] = &[
+    "pingora::runtime::exit",
     "pingora::request::method",
     "pingora::request::path",
+    "pingora::request::id",
+    "pingora::request::query",
+    "pingora::request::scheme",
+    "pingora::request::host",
+    "pingora::request::client_ip",
+    "pingora::request::version",
+    "pingora::request::port",
+    "pingora::request::path_with_query",
+    "pingora::request::body",
     "pingora::request::header",
+    "pingora::request::headers",
+    "pingora::request::query_arg",
+    "pingora::request::query_args",
     "pingora::request::insert_header",
+    "pingora::downstream::attach_http",
     "pingora::response::set_status",
     "pingora::response::status",
+    "pingora::response::set_body",
+    "pingora::response::body",
     "pingora::response::insert_header",
-    "http::request::get_id",
-    "http::request::get_method",
-    "http::request::get_path",
-    "http::request::get_query",
-    "http::request::get_scheme",
-    "http::request::get_host",
-    "http::request::get_header",
-    "http::request::get_client_ip",
-    "http::request::get_headers",
-    "http::request::get_query_arg",
-    "http::request::get_query_args",
-    "http::request::get_path_with_query",
-    "http::request::get_body",
-    "http::request::get_http_version",
-    "http::request::get_port",
-    "http::downstream::attach_transport",
-    "http::response::set_header",
-    "http::response::set_body",
-    "http::response::set_status",
-    "http::response::get_status",
-    "http::response::get_body",
-    "http::response::get_header",
-    "http::response::get_headers",
-    "http::response::add_header",
-    "http::response::clear_header",
-    "http::exchange::new",
-    "http::exchange::default_upstream",
-    "http::exchange::send",
-    "http::exchange::set_header",
-    "http::exchange::set_method",
-    "http::exchange::set_path",
-    "http::exchange::set_query",
-    "http::exchange::set_scheme",
-    "http::exchange::set_target",
-    "http::exchange::attach_tcp",
-    "http::exchange::attach_tls_plaintext",
-    "http::exchange::set_body",
-    "http::exchange::add_header",
-    "http::exchange::clear_header",
-    "http::exchange::set_query_arg",
-    "http::exchange::get_status",
-    "http::exchange::get_header",
-    "http::exchange::get_headers",
-    "http::exchange::get_body",
-    "http::exchange::get_http_version",
-    "http::exchange::body::next_chunk",
-    "http::exchange::body::eof",
-    "rate_limit::allow",
-    "runtime::sleep",
-    "runtime::exit",
-    "tcp::stream::downstream",
-    "tcp::stream::default_upstream",
-    "tcp::stream::new",
-    "tcp::stream::is_present",
-    "tcp::stream::bind",
-    "tcp::stream::set_target",
-    "tcp::stream::connect",
-    "tcp::stream::get_phase",
-    "tcp::stream::get_local_addr",
-    "tcp::stream::get_peer_addr",
-    "tcp::stream::read",
-    "tcp::stream::peek",
-    "tcp::stream::write",
-    "tcp::stream::eof",
-    "tcp::stream::close",
-    "udp::socket::new",
-    "udp::socket::downstream",
-    "udp::socket::default_upstream",
-    "udp::socket::is_present",
-    "udp::socket::bind",
-    "udp::socket::set_target",
-    "udp::socket::connect",
-    "udp::socket::get_phase",
-    "udp::socket::get_local_addr",
-    "udp::socket::get_peer_addr",
-    "udp::socket::send_text",
-    "udp::socket::recv_text",
-    "udp::socket::send_binary_base64",
-    "udp::socket::recv_binary_base64",
-    "udp::socket::close",
-    "tls::session::from_socket",
-    "tls::session::is_present",
-    "tls::session::handshake",
-    "tls::session::set_alpn",
-    "tls::session::set_verify",
-    "tls::session::set_verify_hostname",
-    "tls::session::set_trusted_certificate",
-    "tls::session::set_client_certificate",
-    "tls::session::set_client_private_key",
-    "tls::session::set_server_certificate",
-    "tls::session::set_server_private_key",
-    "tls::session::set_sni",
-    "tls::session::set_min_version",
-    "tls::session::set_max_version",
-    "tls::session::get_peer_name",
-    "tls::session::get_alpn",
-    "tls::session::get_phase",
-    "tls::session::get_peer_certificate",
-    "tls::session::is_session_reused",
-    "websocket::connection::new",
-    "websocket::connection::downstream",
-    "websocket::connection::default_upstream",
-    "websocket::connection::is_present",
-    "websocket::connection::set_target",
-    "websocket::connection::set_path",
-    "websocket::connection::set_header",
-    "websocket::connection::set_subprotocols",
-    "websocket::connection::connect",
-    "websocket::connection::get_phase",
-    "websocket::connection::get_subprotocol",
-    "websocket::connection::send_text",
-    "websocket::connection::read_text",
-    "websocket::connection::send_binary_base64",
-    "websocket::connection::read_binary_base64",
-    "websocket::connection::send_binary",
-    "websocket::connection::read_binary",
-    "websocket::connection::eof",
-    "websocket::connection::close",
-    "webrtc::connection::new",
-    "webrtc::connection::downstream",
-    "webrtc::connection::default_upstream",
-    "webrtc::connection::is_present",
-    "webrtc::connection::set_ice_servers",
-    "webrtc::connection::set_data_channel_label",
-    "webrtc::connection::set_remote_description",
-    "webrtc::connection::create_offer",
-    "webrtc::connection::create_answer",
-    "webrtc::connection::connect",
-    "webrtc::connection::get_phase",
-    "webrtc::connection::send_text",
-    "webrtc::connection::read_text",
-    "webrtc::connection::send_binary_base64",
-    "webrtc::connection::read_binary_base64",
-    "webrtc::connection::eof",
-    "webrtc::connection::close",
-    "proxy::stream::downstream",
-    "proxy::stream::exchange",
-    "proxy::stream::from_tcp",
-    "proxy::stream::from_tls_plaintext",
-    "proxy::stream::from_websocket_binary",
-    "proxy::pipe",
-    "proxy::bridge",
-    "proxy::forward",
-    "proxy::forward_native",
+    "pingora::response::append_header",
+    "pingora::response::remove_header",
+    "pingora::response::header",
+    "pingora::response::headers",
+    "pingora::upstream::new",
+    "pingora::upstream::default",
+    "pingora::upstream::send",
+    "pingora::upstream::insert_header",
+    "pingora::upstream::append_header",
+    "pingora::upstream::remove_header",
+    "pingora::upstream::set_method",
+    "pingora::upstream::set_path",
+    "pingora::upstream::set_query",
+    "pingora::upstream::set_scheme",
+    "pingora::upstream::set_body",
+    "pingora::upstream::set_query_arg",
+    "pingora::upstream::set_peer",
+    "pingora::upstream::attach_tcp",
+    "pingora::upstream::attach_tls_plaintext",
+    "pingora::upstream::status",
+    "pingora::upstream::header",
+    "pingora::upstream::headers",
+    "pingora::upstream::body",
+    "pingora::upstream::version",
+    "pingora::upstream::body_next_chunk",
+    "pingora::upstream::body_eof",
+    "pingora::limits::allow",
+    "pingora::runtime::sleep",
+    "pingora::tcp::downstream",
+    "pingora::tcp::default_upstream",
+    "pingora::tcp::new",
+    "pingora::tcp::is_present",
+    "pingora::tcp::bind",
+    "pingora::tcp::set_peer",
+    "pingora::tcp::connect",
+    "pingora::tcp::phase",
+    "pingora::tcp::local_addr",
+    "pingora::tcp::peer_addr",
+    "pingora::tcp::read",
+    "pingora::tcp::peek",
+    "pingora::tcp::write",
+    "pingora::tcp::eof",
+    "pingora::tcp::close",
+    "pingora::tls::accept",
+    "pingora::tls::is_present",
+    "pingora::tls::handshake",
+    "pingora::tls::set_alpn",
+    "pingora::tls::set_sni",
+    "pingora::tls::set_verify",
+    "pingora::tls::set_verify_hostname",
+    "pingora::tls::set_trusted_certificate",
+    "pingora::tls::set_client_certificate",
+    "pingora::tls::set_client_private_key",
+    "pingora::tls::set_server_certificate",
+    "pingora::tls::set_server_private_key",
+    "pingora::tls::set_min_version",
+    "pingora::tls::set_max_version",
+    "pingora::tls::peer_name",
+    "pingora::tls::alpn",
+    "pingora::tls::phase",
+    "pingora::tls::peer_certificate",
+    "pingora::tls::is_reused",
+    "pingora::websocket::new",
+    "pingora::websocket::downstream",
+    "pingora::websocket::default_upstream",
+    "pingora::websocket::is_present",
+    "pingora::websocket::set_peer",
+    "pingora::websocket::set_path",
+    "pingora::websocket::set_header",
+    "pingora::websocket::set_subprotocols",
+    "pingora::websocket::connect",
+    "pingora::websocket::phase",
+    "pingora::websocket::subprotocol",
+    "pingora::websocket::send_text",
+    "pingora::websocket::read_text",
+    "pingora::websocket::send_binary_base64",
+    "pingora::websocket::send_binary",
+    "pingora::websocket::read_binary_base64",
+    "pingora::websocket::read_binary",
+    "pingora::websocket::eof",
+    "pingora::websocket::close",
+    "pingora::proxy::downstream_stream",
+    "pingora::proxy::upstream_stream",
+    "pingora::proxy::tcp_stream",
+    "pingora::proxy::tls_plaintext_stream",
+    "pingora::proxy::websocket_binary_stream",
+    "pingora::proxy::pipe",
+    "pingora::proxy::bridge",
+    "pingora::proxy::forward",
+    "pingora::proxy::forward_native",
 ];

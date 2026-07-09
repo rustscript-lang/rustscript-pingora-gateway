@@ -1,5 +1,4 @@
 use pingora;
-
 let method: string = pingora::request::method();
 let path: string = pingora::request::path();
 let tier: string = pingora::request::header("x-user-tier");

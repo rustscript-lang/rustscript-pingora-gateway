@@ -1,34 +1,17 @@
-use http;
-use tcp;
-use tls;
-use udp;
-use webrtc;
+use pingora;
 
-let tcp_stream: int = tcp::stream::new();
-tcp::stream::set_target(tcp_stream, "127.0.0.1", 19000);
-tcp::stream::connect(tcp_stream);
-tcp::stream::write(tcp_stream, "hello-tcp");
+let tcp_stream: int = pingora::tcp::new();
+pingora::tcp::set_peer(tcp_stream, "127.0.0.1", 19000);
+pingora::tcp::connect(tcp_stream);
+pingora::tcp::write(tcp_stream, "hello-tcp");
 
-let session: int = tls::session::from_socket(tcp_stream);
-tls::session::set_verify(session, false);
-tls::session::set_alpn(session, "edge/1");
-tls::session::handshake(session);
+let session: int = pingora::tls::accept(tcp_stream);
+pingora::tls::set_verify(session, false);
+pingora::tls::set_alpn(session, "edge/1");
+pingora::tls::handshake(session);
 
-let socket: int = udp::socket::new();
-udp::socket::set_target(socket, "127.0.0.1", 19001);
-udp::socket::send_text(socket, "hello-udp");
-let udp_reply: string = udp::socket::recv_text(socket, 64);
-
-let rtc: int = webrtc::connection::new();
-webrtc::connection::set_ice_servers(rtc, "stun:localhost");
-webrtc::connection::set_data_channel_label(rtc, "policy");
-webrtc::connection::connect(rtc);
-webrtc::connection::send_text(rtc, "hello-rtc");
-
-http::response::set_status(200);
-http::response::set_header("x-tcp-phase", tcp::stream::get_phase(tcp_stream));
-http::response::set_header("x-tls-phase", tls::session::get_phase(session));
-http::response::set_header("x-tls-alpn", tls::session::get_alpn(session));
-http::response::set_header("x-udp-reply", udp_reply);
-http::response::set_header("x-webrtc-phase", webrtc::connection::get_phase(rtc));
-http::response::set_body("transport matrix ok");
+pingora::response::set_status(200);
+pingora::response::insert_header("x-tcp-phase", pingora::tcp::phase(tcp_stream));
+pingora::response::insert_header("x-tls-phase", pingora::tls::phase(session));
+pingora::response::insert_header("x-tls-alpn", pingora::tls::alpn(session));
+pingora::response::set_body("transport matrix ok");

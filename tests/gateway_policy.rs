@@ -138,7 +138,7 @@ fn websocket_proxy_script_round_trips_text_and_marks_close_phase() {
 }
 
 #[test]
-fn transport_matrix_script_exercises_tcp_tls_udp_and_webrtc_hosts() {
+fn transport_matrix_script_exercises_tcp_and_tls_hosts() {
     let policy = policy(include_str!("../scripts/transport_matrix.rss"));
     let mut request =
         RequestHeader::build("POST", b"/transport", None).expect("request should build");
@@ -151,7 +151,5 @@ fn transport_matrix_script_exercises_tcp_tls_udp_and_webrtc_hosts() {
     assert_eq!(header(&result.response, "x-tcp-phase"), "connected");
     assert_eq!(header(&result.response, "x-tls-phase"), "handshaked");
     assert_eq!(header(&result.response, "x-tls-alpn"), "edge/1");
-    assert_eq!(header(&result.response, "x-udp-reply"), "pong");
-    assert_eq!(header(&result.response, "x-webrtc-phase"), "connected");
     assert_eq!(result.body, "transport matrix ok");
 }

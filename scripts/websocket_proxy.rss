@@ -1,30 +1,27 @@
-use http;
-use proxy;
-use websocket;
+use pingora;
+let downstream: int = pingora::websocket::downstream();
+pingora::response::insert_header("x-downstream-ws", pingora::websocket::phase(downstream));
 
-let downstream: int = websocket::connection::downstream();
-http::response::set_header("x-downstream-ws", websocket::connection::get_phase(downstream));
+let upstream: int = pingora::websocket::default_upstream();
+pingora::websocket::set_peer(upstream, "127.0.0.1", 18091);
+pingora::websocket::set_path(upstream, "/echo");
+pingora::websocket::set_subprotocols(upstream, "chat,superchat");
+pingora::websocket::connect(upstream);
 
-let upstream: int = websocket::connection::default_upstream();
-websocket::connection::set_target(upstream, "127.0.0.1", 18091);
-websocket::connection::set_path(upstream, "/echo");
-websocket::connection::set_subprotocols(upstream, "chat,superchat");
-websocket::connection::connect(upstream);
-
-let mut message: string = http::request::get_header("x-ws-message");
+let mut message: string = pingora::request::header("x-ws-message");
 if message == "" {
     message = "pingora-websocket";
 }
-websocket::connection::send_text(upstream, message);
-let reply: string = websocket::connection::read_text(upstream);
+pingora::websocket::send_text(upstream, message);
+let reply: string = pingora::websocket::read_text(upstream);
 
-let down_stream: int = proxy::stream::downstream();
-let up_stream: int = proxy::stream::from_websocket_binary(upstream);
-let proxy_status: string = proxy::bridge(down_stream, up_stream, 8);
+let down_stream: int = pingora::proxy::downstream_stream();
+let up_stream: int = pingora::proxy::websocket_binary_stream(upstream);
+let proxy_status: string = pingora::proxy::bridge(down_stream, up_stream, 8);
 
-http::response::set_status(200);
-http::response::set_header("x-ws-protocol", websocket::connection::get_subprotocol(upstream));
-http::response::set_header("x-proxy-status", proxy_status);
-http::response::set_body(reply);
-websocket::connection::close(upstream, 1000, "complete");
-http::response::set_header("x-ws-phase", websocket::connection::get_phase(upstream));
+pingora::response::set_status(200);
+pingora::response::insert_header("x-ws-protocol", pingora::websocket::subprotocol(upstream));
+pingora::response::insert_header("x-proxy-status", proxy_status);
+pingora::response::set_body(reply);
+pingora::websocket::close(upstream, 1000, "complete");
+pingora::response::insert_header("x-ws-phase", pingora::websocket::phase(upstream));
