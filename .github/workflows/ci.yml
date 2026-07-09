@@ -23,6 +23,10 @@ jobs:
         with:
           repository: rustscript-lang/rustscript
           path: rustscript
+      - uses: actions/checkout@v4
+        with:
+          repository: rustscript-lang/pd-edge
+          path: pd-edge
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -31,10 +35,12 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         working-directory: rustscript-pingora-gateway-policy
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings
       - name: Tests
         working-directory: rustscript-pingora-gateway-policy
         run: cargo test --tests --jobs 4
       - name: Example run
         working-directory: rustscript-pingora-gateway-policy
-        run: cargo run --example decision
+        run: |
+          cargo run --example decision
+          cargo run --example protocols
