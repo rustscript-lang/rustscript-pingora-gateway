@@ -1,5 +1,5 @@
 use pingora::http::{RequestHeader, ResponseHeader};
-use vm::{Value, Vm, VmStatus, compile_source};
+use vm::{CallOutcome, CallReturn, HostFunction, Value, Vm, VmError, VmStatus, compile_source};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatewayDecision {
@@ -86,9 +86,23 @@ fn run_string(source: &str) -> Result<String, String> {
     }
 }
 
+struct GatewayDecisionHost;
+
+impl HostFunction for GatewayDecisionHost {
+    fn call(&mut self, _vm: &mut Vm, args: &[Value]) -> Result<CallOutcome, VmError> {
+        match args {
+            [Value::String(decision)] => Ok(CallOutcome::Return(CallReturn::one(Value::String(
+                decision.clone(),
+            )))),
+            _ => Err(VmError::TypeMismatch("gateway decision string")),
+        }
+    }
+}
+
 fn run_value(source: &str) -> Result<Value, String> {
     let compiled = compile_source(source).map_err(|err| err.to_string())?;
     let mut vm = Vm::new(compiled.program);
+    vm.bind_function("gateway_decision", Box::new(GatewayDecisionHost));
     let status = vm.run().map_err(|err| err.to_string())?;
     if status != VmStatus::Halted {
         return Err(format!("script did not halt: {status:?}"));

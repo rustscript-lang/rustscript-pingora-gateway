@@ -1,3 +1,5 @@
+fn gateway_decision(decision) -> string;
+
 let blocked_admin = path == "/admin" && tier != "pro";
 let canary = path == "/canary" && method == "GET";
 let decision = if blocked_admin => {
@@ -7,4 +9,4 @@ let decision = if blocked_admin => {
 } else => {
     "allow"
 };
-decision;
+gateway_decision(decision);

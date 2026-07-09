@@ -1,5 +1,0 @@
-[build]
-target-dir = "/mnt/TEMP/workspace/rustscript-pingora-gateway-policy/target"
-
-[env]
-RUST_TEST_THREADS = "4"
