@@ -10,10 +10,7 @@ if path == "/admin" && tier != "pro" {
     pingora::response::set_status(403);
     pingora::response::insert_header("x-rustscript-deny-reason", "upgrade required");
 } else if path == "/canary" && method == "GET" {
-    pingora::response::set_status(200);
-    pingora::response::insert_header("x-rustscript-upstream", "canary-upstream");
-} else {
-    pingora::response::set_status(204);
+    pingora::response::insert_header("x-rustscript-upstream", "loopback-upstream");
 }
 
 pingora::response::status();

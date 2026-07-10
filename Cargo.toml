@@ -5,8 +5,9 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+async-trait = "0.1"
 pd-host-function = { path = "../rustscript/pd-host-function" }
-pingora = "0.8.1"
+pingora = { version = "0.8.1", features = ["proxy"] }
 vm = { package = "pd-vm", path = "../rustscript", default-features = false, features = ["runtime"] }
 
 [dev-dependencies]

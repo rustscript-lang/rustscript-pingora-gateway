@@ -1,33 +1,68 @@
 # rustscript-pingora-gateway-policy
 
-Standalone Pingora integration demo for `pd-vm` / RustScript.
+A runnable Pingora reverse proxy whose request policy is evaluated by RustScript through `pd-vm`.
 
-## What it proves
+## Real network path
 
-A Pingora gateway can keep the framework and proxy code compiled while moving request, transport, protocol, and response policy into RustScript:
+The `gateway` binary starts a Pingora `Server`, registers an HTTP proxy service with `http_proxy_service`, listens on a TCP socket, and returns a real `HttpPeer` for the configured upstream. The request path is:
 
-- live `pingora::http::RequestHeader` reads and request mutation
-- Pingora-native host namespaces for request, response, upstream exchange, proxy stream, TCP, TLS, and WebSocket policy
-- proxy helpers for native forwarding, bridged forwarding, and exchange-backed streams
-- TLS termination and raw downstream transport handling expressed through `pingora::tls::*`, `pingora::tcp::*`, and `pingora::downstream::*`
-- scripts import only `pingora`; no pd-edge ABI namespace is required
+```text
+HTTP client -> Pingora listener -> RustScript request policy -> Pingora HttpPeer -> upstream TCP server
+```
 
-This does not fork or patch Pingora. It depends on the upstream `pingora` crate plus local `pd-vm` / `pd-host-function` paths only.
+RustScript receives the `RequestHeader` owned by the accepted Pingora `Session`. It can:
 
-## Scripts
+- read the live method, path, and headers through `pingora::request::*`
+- mutate the request before Pingora sends it upstream
+- stop a request with a local response, such as the `/admin` 403 policy
+- add headers to the real upstream response before Pingora writes it downstream
 
-| script | focus |
-|---|---|
-| `scripts/gateway_policy.rss` | direct Pingora request/response policy |
-| `scripts/http_proxy.rss` | HTTP exchange, streaming body reads, proxy forwarding, rate limit decision |
-| `scripts/tls_termination.rss` | raw transport prelude, TLS handshake, downstream HTTP attach |
-| `scripts/websocket_proxy.rss` | WebSocket upstream configuration, message round trip, stream bridge |
-| `scripts/transport_matrix.rss` | TCP and TLS host calls in one policy |
+The project depends on the upstream `pingora` crate with its `proxy` feature. It does not fork or patch Pingora.
 
-## Run
+## Run a live proxy
+
+Start any local HTTP server as the upstream:
 
 ```bash
-cargo test --tests --jobs 4
-cargo run --example decision
-cargo run --example protocols
+python3 -m http.server 8080 --bind 127.0.0.1
 ```
+
+Start the Pingora gateway in another terminal:
+
+```bash
+cargo run --bin gateway -- \
+  --listen 127.0.0.1:6191 \
+  --upstream 127.0.0.1:8080 \
+  --script scripts/gateway_policy.rss
+```
+
+Send requests through Pingora:
+
+```bash
+curl -i http://127.0.0.1:6191/canary
+curl -i http://127.0.0.1:6191/admin -H 'x-user-tier: free'
+```
+
+The first request reaches the upstream after RustScript inserts `x-rustscript-checked: true`. The second receives a RustScript-controlled 403 before any upstream connection is opened.
+
+## Verification
+
+```bash
+cargo test --test gateway_policy
+cargo test --test live_proxy -- --nocapture
+cargo clippy --all-targets -- -D warnings
+```
+
+`tests/live_proxy.rs` binds two real loopback sockets, launches the compiled Pingora gateway process, sends downstream HTTP requests, and records the bytes received by the upstream socket. It verifies that:
+
+- denied traffic never reaches the upstream listener
+- allowed traffic is forwarded by Pingora
+- the upstream receives the RustScript-added request header
+- the client receives the real upstream body and headers
+- RustScript response headers are applied to the proxied response
+
+The direct `RequestHeader` tests remain as focused policy unit tests; the loopback test supplies the network-level proof.
+
+## Script
+
+See [`scripts/gateway_policy.rss`](scripts/gateway_policy.rss).

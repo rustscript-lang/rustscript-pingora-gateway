@@ -36,11 +36,9 @@ jobs:
       - name: Clippy
         working-directory: rustscript-pingora-gateway-policy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Tests
+      - name: Policy unit tests
         working-directory: rustscript-pingora-gateway-policy
-        run: cargo test --tests --jobs 4
-      - name: Example run
+        run: cargo test --test gateway_policy
+      - name: Real Pingora proxy integration
         working-directory: rustscript-pingora-gateway-policy
-        run: |
-          cargo run --example decision
-          cargo run --example protocols
+        run: cargo test --test live_proxy -- --nocapture
