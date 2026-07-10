@@ -1,4 +1,4 @@
-# rustscript-pingora-gateway-policy
+# rustscript-pingora-gateway
 
 A runnable Pingora reverse proxy whose request policy is evaluated by RustScript through `pd-vm`.
 

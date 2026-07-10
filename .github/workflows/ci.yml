@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: rustscript-pingora-gateway-policy
+          path: rustscript-pingora-gateway
       - uses: actions/checkout@v4
         with:
           repository: rustscript-lang/rustscript
@@ -27,14 +27,14 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Format check
-        working-directory: rustscript-pingora-gateway-policy
+        working-directory: rustscript-pingora-gateway
         run: cargo fmt --all -- --check
       - name: Clippy
-        working-directory: rustscript-pingora-gateway-policy
+        working-directory: rustscript-pingora-gateway
         run: cargo clippy --all-targets -- -D warnings
       - name: Policy unit tests
-        working-directory: rustscript-pingora-gateway-policy
+        working-directory: rustscript-pingora-gateway
         run: cargo test --test gateway_policy
       - name: Real Pingora proxy integration
-        working-directory: rustscript-pingora-gateway-policy
+        working-directory: rustscript-pingora-gateway
         run: cargo test --test live_proxy -- --nocapture
