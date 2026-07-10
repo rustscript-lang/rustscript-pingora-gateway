@@ -16,6 +16,12 @@ impl Drop for ChildGuard {
     }
 }
 
+#[derive(Debug)]
+enum UpstreamEvent {
+    Accepted,
+    Request(String),
+}
+
 fn unused_loopback_addr() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").expect("ephemeral port should bind");
     listener
@@ -34,16 +40,38 @@ fn wait_for_listener(addr: SocketAddr) {
     panic!("proxy did not listen on {addr}");
 }
 
-fn send_request(addr: SocketAddr, request: &str) -> String {
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2))
+fn connect_client(addr: SocketAddr) -> TcpStream {
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2))
         .expect("client should connect to Pingora");
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .expect("read timeout should apply");
     stream
+}
+
+fn write_request(stream: &mut TcpStream, request: &str) {
+    stream
         .write_all(request.as_bytes())
         .expect("request should reach Pingora");
+}
 
+fn read_response_headers(stream: &mut TcpStream) -> String {
+    let mut response = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    while !response.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream
+            .read(&mut chunk)
+            .expect("Pingora should return response headers");
+        assert!(
+            read > 0,
+            "Pingora closed before completing response headers"
+        );
+        response.extend_from_slice(&chunk[..read]);
+    }
+    String::from_utf8(response).expect("response headers should be UTF-8")
+}
+
+fn read_response_to_close(stream: &mut TcpStream) -> String {
     let mut response = Vec::new();
     let mut chunk = [0_u8; 4096];
     loop {
@@ -57,7 +85,7 @@ fn send_request(addr: SocketAddr, request: &str) -> String {
     String::from_utf8(response).expect("response should be UTF-8")
 }
 
-fn spawn_upstream(listener: TcpListener) -> mpsc::Receiver<String> {
+fn spawn_upstream(listener: TcpListener) -> mpsc::Receiver<UpstreamEvent> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         listener
@@ -73,6 +101,9 @@ fn spawn_upstream(listener: TcpListener) -> mpsc::Receiver<String> {
                 Err(err) => panic!("upstream failed to accept Pingora connection: {err}"),
             }
         };
+        sender
+            .send(UpstreamEvent::Accepted)
+            .expect("test should receive upstream accept event");
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("upstream read timeout should apply");
@@ -89,7 +120,9 @@ fn spawn_upstream(listener: TcpListener) -> mpsc::Receiver<String> {
             request.extend_from_slice(&chunk[..read]);
         }
         sender
-            .send(String::from_utf8(request).expect("upstream request should be UTF-8"))
+            .send(UpstreamEvent::Request(
+                String::from_utf8(request).expect("upstream request should be UTF-8"),
+            ))
             .expect("test should receive observed upstream request");
 
         stream
@@ -108,7 +141,7 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
     let upstream_addr = upstream_listener
         .local_addr()
         .expect("upstream should have an address");
-    let observed_upstream = spawn_upstream(upstream_listener);
+    let upstream_events = spawn_upstream(upstream_listener);
     let proxy_addr = unused_loopback_addr();
 
     let child = Command::new(env!("CARGO_BIN_EXE_gateway"))
@@ -127,28 +160,31 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
     let _gateway = ChildGuard(child);
     wait_for_listener(proxy_addr);
 
-    let denied = send_request(
-        proxy_addr,
-        "GET /admin HTTP/1.1\r\nhost: gateway.test\r\nx-user-tier: free\r\nconnection: close\r\n\r\n",
+    let mut downstream = connect_client(proxy_addr);
+    write_request(
+        &mut downstream,
+        "GET /admin HTTP/1.1\r\nhost: gateway.test\r\nx-user-tier: free\r\nconnection: keep-alive\r\n\r\n",
     );
+    let denied = read_response_headers(&mut downstream);
+    let denied_lower = denied.to_ascii_lowercase();
     assert!(denied.starts_with("HTTP/1.1 403"), "{denied}");
     assert!(
-        denied
-            .to_ascii_lowercase()
-            .contains("x-rustscript-deny-reason: upgrade required"),
+        denied_lower.contains("x-rustscript-deny-reason: upgrade required"),
         "{denied}"
     );
+    assert!(denied_lower.contains("content-length: 0"), "{denied}");
     assert!(
-        observed_upstream
+        upstream_events
             .recv_timeout(Duration::from_millis(200))
             .is_err(),
-        "denied request must not reach upstream"
+        "denied request must not establish an upstream connection"
     );
 
-    let forwarded = send_request(
-        proxy_addr,
+    write_request(
+        &mut downstream,
         "GET /canary HTTP/1.1\r\nhost: gateway.test\r\nconnection: close\r\n\r\n",
     );
+    let forwarded = read_response_to_close(&mut downstream);
     let forwarded_lower = forwarded.to_ascii_lowercase();
     assert!(forwarded.starts_with("HTTP/1.1 200"), "{forwarded}");
     assert!(forwarded.ends_with("real-upstream-body"), "{forwarded}");
@@ -165,9 +201,18 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
         "{forwarded}"
     );
 
-    let upstream_request = observed_upstream
+    assert!(matches!(
+        upstream_events
+            .recv_timeout(Duration::from_secs(2))
+            .expect("Pingora should establish an upstream connection"),
+        UpstreamEvent::Accepted
+    ));
+    let UpstreamEvent::Request(upstream_request) = upstream_events
         .recv_timeout(Duration::from_secs(2))
-        .expect("Pingora should open an upstream socket and send the request");
+        .expect("Pingora should send an upstream request")
+    else {
+        panic!("expected upstream request bytes");
+    };
     let upstream_lower = upstream_request.to_ascii_lowercase();
     assert!(upstream_request.starts_with("GET /canary HTTP/1.1"));
     assert!(

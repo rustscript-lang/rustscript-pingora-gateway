@@ -8,24 +8,30 @@ use pingora::{
     upstreams::peer::HttpPeer,
 };
 pub(crate) use vm::Vm;
-use vm::{CallOutcome, CallReturn, Value, VmError, VmResult, VmStatus, compile_source};
+use vm::{
+    CallOutcome, CallReturn, JitConfig, Program, Value, VmError, VmResult, VmStatus, compile_source,
+};
+
+const POLICY_FUEL: u64 = 1_000_000;
 
 #[derive(Debug, Clone)]
 pub struct ScriptedGatewayPolicy {
-    source: String,
+    program: Program,
 }
 
 impl ScriptedGatewayPolicy {
     pub fn from_source(source: impl Into<String>) -> Result<Self, String> {
         let source = source.into();
-        compile_source(&source).map_err(|err| err.to_string())?;
-        Ok(Self { source })
+        let compiled = compile_source(&source).map_err(|err| err.to_string())?;
+        Ok(Self {
+            program: compiled.program,
+        })
     }
 
     pub fn evaluate_request(&self, request: &mut RequestHeader) -> Result<ResponseHeader, String> {
         let mut response = ResponseHeader::build(200, Some(8))
             .map_err(|err| format!("failed to build Pingora response: {err}"))?;
-        with_gateway_context(request, &mut response, || run_policy(&self.source))?;
+        with_gateway_context(request, &mut response, || run_policy(&self.program))?;
         Ok(response)
     }
 }
@@ -60,7 +66,7 @@ impl ProxyHttp for ScriptedProxy {
         session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<bool> {
-        let policy_response = self
+        let mut policy_response = self
             .policy
             .evaluate_request(session.as_downstream_mut().req_header_mut())
             .map_err(|err| Error::explain(ErrorType::InternalError, err))?;
@@ -77,6 +83,16 @@ impl ProxyHttp for ScriptedProxy {
             .collect();
 
         if policy_response.status.as_u16() != 200 {
+            policy_response.remove_header("transfer-encoding");
+            policy_response
+                .insert_header("content-length", "0")
+                .map_err(|err| {
+                    Error::because(
+                        ErrorType::InternalError,
+                        "failed to frame local policy response",
+                        err,
+                    )
+                })?;
             session
                 .write_response_header(Box::new(policy_response), true)
                 .await?;
@@ -185,13 +201,43 @@ fn with_response<T>(f: impl FnOnce(&mut ResponseHeader) -> VmResult<T>) -> VmRes
     })
 }
 
-fn run_policy(source: &str) -> Result<(), String> {
-    let compiled = compile_source(source).map_err(|err| err.to_string())?;
-    let mut vm = Vm::new(compiled.program);
+fn run_policy(program: &Program) -> Result<(), String> {
+    let mut vm = Vm::new(program.clone());
+    vm.set_jit_config(JitConfig {
+        enabled: false,
+        ..JitConfig::default()
+    });
+    vm.set_fuel(POLICY_FUEL);
     bind_pingora_hosts(&mut vm);
     let status = vm.run().map_err(|err| err.to_string())?;
     if status != VmStatus::Halted {
-        return Err(format!("script did not halt: {status:?}"));
+        return Err(format!(
+            "script did not halt within fuel budget: status={status:?}, remaining={:?}",
+            vm.get_fuel()
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_script_header_allowed(name: &str) -> VmResult<()> {
+    let normalized = name.trim().to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "connection"
+            | "content-length"
+            | "expect"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "proxy-connection"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    ) {
+        return Err(VmError::HostError(format!(
+            "RustScript cannot modify framing or hop-by-hop header: {name}"
+        )));
     }
     Ok(())
 }
@@ -329,6 +375,7 @@ mod host {
         /// Calls Pingora RequestHeader::insert_header on the live request.
         #[pd_host_function(name = "pingora::request::insert_header")]
         pub(super) fn request_insert_header_impl(name: &str, value: &str) -> VmResult<bool> {
+            ensure_script_header_allowed(name)?;
             with_request(|request| {
                 request
                     .insert_header(name.to_string(), value.to_string())
@@ -373,6 +420,7 @@ mod host {
         /// Calls Pingora ResponseHeader::insert_header on the live response.
         #[pd_host_function(name = "pingora::response::insert_header")]
         pub(super) fn response_insert_header_impl(name: &str, value: &str) -> VmResult<bool> {
+            ensure_script_header_allowed(name)?;
             with_response(|response| {
                 response
                     .insert_header(name.to_string(), value.to_string())

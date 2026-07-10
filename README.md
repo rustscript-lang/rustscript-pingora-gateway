@@ -19,6 +19,8 @@ RustScript receives the `RequestHeader` owned by the accepted Pingora `Session`.
 
 The project depends on the upstream `pingora` crate with its `proxy` feature. It does not fork or patch Pingora.
 
+The policy bytecode is compiled once when the gateway starts. Each request runs a fresh VM with JIT disabled and a fixed fuel budget. Script host calls reject framing and hop-by-hop headers such as `Content-Length`, `Transfer-Encoding`, and `Connection`; local empty responses are emitted with `Content-Length: 0` so the downstream connection can be reused.
+
 ## Run a live proxy
 
 Start any local HTTP server as the upstream:
@@ -56,6 +58,7 @@ cargo clippy --all-targets -- -D warnings
 `tests/live_proxy.rs` binds two real loopback sockets, launches the compiled Pingora gateway process, sends downstream HTTP requests, and records the bytes received by the upstream socket. It verifies that:
 
 - denied traffic never reaches the upstream listener
+- a denied response and a forwarded request can share one downstream keep-alive connection
 - allowed traffic is forwarded by Pingora
 - the upstream receives the RustScript-added request header
 - the client receives the real upstream body and headers
