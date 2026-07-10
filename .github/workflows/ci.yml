@@ -23,10 +23,6 @@ jobs:
         with:
           repository: rustscript-lang/rustscript
           path: rustscript
-      - uses: actions/checkout@v4
-        with:
-          repository: rustscript-lang/pd-edge
-          path: pd-edge
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
