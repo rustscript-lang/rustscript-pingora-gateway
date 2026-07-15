@@ -1,7 +1,9 @@
 use pingora;
 let method: string = pingora::request::method();
 let path: string = pingora::request::path();
+let query: string = pingora::request::query();
 let tier: string = pingora::request::header("x-user-tier");
+let rewrite: string = pingora::request::header("x-rustscript-rewrite");
 
 let request_marked: bool = pingora::request::insert_header("x-rustscript-checked", "true");
 let policy_marked: bool = pingora::response::insert_header("x-rustscript-policy", "gateway_policy");
@@ -11,6 +13,19 @@ if path == "/admin" && tier != "pro" {
     pingora::response::insert_header("x-rustscript-deny-reason", "upgrade required");
 } else if path == "/canary" && method == "GET" {
     pingora::response::insert_header("x-rustscript-upstream", "loopback-upstream");
+    if rewrite == "true" {
+        pingora::request::insert_header("x-original-query", query);
+        pingora::request::append_header("x-request-value", "one");
+        pingora::request::append_header("x-request-value", "two");
+        pingora::request::remove_header("x-remove-me");
+        pingora::request::set_method("POST");
+        pingora::request::set_uri("/rewritten?source=rustscript");
+
+        pingora::response::insert_header("x-original-target", path + "?" + query);
+        pingora::response::append_header("x-rustscript-policy", "rewritten");
+        pingora::response::insert_header("x-remove-response", "temporary");
+        pingora::response::remove_header("x-remove-response");
+    }
 }
 
 pingora::response::status();

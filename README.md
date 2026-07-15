@@ -19,6 +19,32 @@ RustScript receives the `RequestHeader` owned by the accepted Pingora `Session`.
 
 The project depends on the upstream `pingora` crate with its `proxy` feature. It does not fork or patch Pingora.
 
+## Supported RustScript host API
+
+Every bound host below reads or mutates the live Pingora `RequestHeader` or `ResponseHeader`. Names follow the corresponding Pingora header fields and methods:
+
+| RustScript host | Pingora operation |
+| --- | --- |
+| `pingora::request::method` | `RequestHeader.method` |
+| `pingora::request::path` | `RequestHeader.uri.path()` |
+| `pingora::request::query` | `RequestHeader.uri.query()` |
+| `pingora::request::uri` | `RequestHeader.uri` |
+| `pingora::request::version` | `RequestHeader.version` |
+| `pingora::request::header` | `RequestHeader.headers.get()` |
+| `pingora::request::insert_header` | `RequestHeader::insert_header()` |
+| `pingora::request::append_header` | `RequestHeader::append_header()` |
+| `pingora::request::remove_header` | `RequestHeader::remove_header()` |
+| `pingora::request::set_method` | `RequestHeader::set_method()` |
+| `pingora::request::set_uri` | `RequestHeader::set_uri()` |
+| `pingora::response::status` | `ResponseHeader.status` |
+| `pingora::response::set_status` | `ResponseHeader::set_status()` |
+| `pingora::response::header` | `ResponseHeader.headers.get()` |
+| `pingora::response::insert_header` | `ResponseHeader::insert_header()` |
+| `pingora::response::append_header` | `ResponseHeader::append_header()` |
+| `pingora::response::remove_header` | `ResponseHeader::remove_header()` |
+
+The gateway deliberately does not bind the old modeled `request::id`, `request::scheme`, `request::client_ip`, `request::port`, `tcp`, `tls`, `websocket`, `upstream::send`, or `proxy::pipe` APIs. Their implementations returned hard-coded metadata or changed only in-memory fixture state. Request and response body I/O is also omitted because Pingora exposes it asynchronously through the session and `ProxyHttp` lifecycle. Those operations cannot be implemented truthfully inside the synchronous policy VM host-call boundary.
+
 The policy bytecode is compiled once when the gateway starts. Each request runs a fresh VM with JIT disabled and a fixed fuel budget. Script host calls reject framing and hop-by-hop headers such as `Content-Length`, `Transfer-Encoding`, and `Connection`; local empty responses are emitted with `Content-Length: 0` so the downstream connection can be reused.
 
 ## Run a live proxy

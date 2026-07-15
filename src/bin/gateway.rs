@@ -1,7 +1,7 @@
 use std::{env, fs, net::SocketAddr, process};
 
 use pingora::{proxy::http_proxy_service, server::Server};
-use rustscript_pingora_gateway_policy::{ScriptedGatewayPolicy, ScriptedProxy};
+use rustscript_pingora_gateway::{ScriptedGatewayPolicy, ScriptedProxy};
 
 fn usage() -> ! {
     eprintln!("usage: gateway --upstream HOST:PORT [--listen HOST:PORT] [--script PATH]");

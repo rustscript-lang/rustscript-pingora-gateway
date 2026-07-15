@@ -1,4 +1,4 @@
-use std::{cell::RefCell, net::SocketAddr};
+use std::{cell::RefCell, collections::HashSet, net::SocketAddr};
 
 use async_trait::async_trait;
 use pingora::{
@@ -134,16 +134,22 @@ impl ProxyHttp for ScriptedProxy {
         upstream_response: &mut ResponseHeader,
         ctx: &mut Self::CTX,
     ) -> PingoraResult<()> {
+        let mut inserted = HashSet::new();
         for (name, value) in &ctx.response_headers {
-            upstream_response
-                .insert_header(name.clone(), value.clone())
-                .map_err(|err| {
-                    Error::because(
-                        ErrorType::InternalError,
-                        "failed to apply RustScript response header",
-                        err,
-                    )
-                })?;
+            let result = if inserted.insert(name.to_ascii_lowercase()) {
+                upstream_response.insert_header(name.clone(), value.clone())
+            } else {
+                upstream_response
+                    .append_header(name.clone(), value.clone())
+                    .map(|_| ())
+            };
+            result.map_err(|err| {
+                Error::because(
+                    ErrorType::InternalError,
+                    "failed to apply RustScript response header",
+                    err,
+                )
+            })?;
         }
         Ok(())
     }
@@ -248,6 +254,12 @@ fn bind_pingora_hosts(vm: &mut Vm) {
         host::pingora::request_method_host,
     );
     vm.bind_static_args_function("pingora::request::path", host::pingora::request_path_host);
+    vm.bind_static_args_function("pingora::request::query", host::pingora::request_query_host);
+    vm.bind_static_args_function("pingora::request::uri", host::pingora::request_uri_host);
+    vm.bind_static_args_function(
+        "pingora::request::version",
+        host::pingora::request_version_host,
+    );
     vm.bind_static_args_function(
         "pingora::request::header",
         host::pingora::request_header_host,
@@ -255,6 +267,22 @@ fn bind_pingora_hosts(vm: &mut Vm) {
     vm.bind_static_args_function(
         "pingora::request::insert_header",
         host::pingora::request_insert_header_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::request::append_header",
+        host::pingora::request_append_header_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::request::remove_header",
+        host::pingora::request_remove_header_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::request::set_method",
+        host::pingora::request_set_method_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::request::set_uri",
+        host::pingora::request_set_uri_host,
     );
     vm.bind_static_args_function(
         "pingora::response::set_status",
@@ -267,6 +295,18 @@ fn bind_pingora_hosts(vm: &mut Vm) {
     vm.bind_static_args_function(
         "pingora::response::insert_header",
         host::pingora::response_insert_header_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::response::append_header",
+        host::pingora::response_append_header_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::response::remove_header",
+        host::pingora::response_remove_header_host,
+    );
+    vm.bind_static_args_function(
+        "pingora::response::header",
+        host::pingora::response_header_host,
     );
 }
 
@@ -345,14 +385,44 @@ mod host {
             return_one(request_method(args))
         }
 
-        /// Returns the live Pingora request path.
+        /// Returns the path component of the live Pingora request URI.
         #[pd_host_function(name = "pingora::request::path")]
         pub(super) fn request_path_impl() -> VmResult<String> {
-            with_request(|request| Ok(String::from_utf8_lossy(request.raw_path()).into_owned()))
+            with_request(|request| Ok(request.uri.path().to_string()))
         }
 
         pub(crate) fn request_path_host(args: &[Value]) -> VmResult<CallOutcome> {
             return_one(request_path(args))
+        }
+
+        /// Returns the query component of the live Pingora request URI.
+        #[pd_host_function(name = "pingora::request::query")]
+        pub(super) fn request_query_impl() -> VmResult<String> {
+            with_request(|request| Ok(request.uri.query().unwrap_or("").to_string()))
+        }
+
+        pub(crate) fn request_query_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_query(args))
+        }
+
+        /// Returns the live Pingora request URI.
+        #[pd_host_function(name = "pingora::request::uri")]
+        pub(super) fn request_uri_impl() -> VmResult<String> {
+            with_request(|request| Ok(request.uri.to_string()))
+        }
+
+        pub(crate) fn request_uri_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_uri(args))
+        }
+
+        /// Returns the HTTP version of the live Pingora request.
+        #[pd_host_function(name = "pingora::request::version")]
+        pub(super) fn request_version_impl() -> VmResult<String> {
+            with_request(|request| Ok(format!("{:?}", request.version)))
+        }
+
+        pub(crate) fn request_version_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_version(args))
         }
 
         /// Reads a header from the live Pingora request.
@@ -390,6 +460,66 @@ mod host {
             return_one(request_insert_header(args))
         }
 
+        /// Calls Pingora RequestHeader::append_header on the live request.
+        #[pd_host_function(name = "pingora::request::append_header")]
+        pub(super) fn request_append_header_impl(name: &str, value: &str) -> VmResult<bool> {
+            ensure_script_header_allowed(name)?;
+            with_request(|request| {
+                request
+                    .append_header(name.to_string(), value.to_string())
+                    .map_err(|err| {
+                        VmError::HostError(format!("Pingora request append_header: {err}"))
+                    })
+            })
+        }
+
+        pub(crate) fn request_append_header_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_append_header(args))
+        }
+
+        /// Calls Pingora RequestHeader::remove_header on the live request.
+        #[pd_host_function(name = "pingora::request::remove_header")]
+        pub(super) fn request_remove_header_impl(name: &str) -> VmResult<bool> {
+            ensure_script_header_allowed(name)?;
+            with_request(|request| Ok(request.remove_header(name).is_some()))
+        }
+
+        pub(crate) fn request_remove_header_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_remove_header(args))
+        }
+
+        /// Calls Pingora RequestHeader::set_method on the live request.
+        #[pd_host_function(name = "pingora::request::set_method")]
+        pub(super) fn request_set_method_impl(method: &str) -> VmResult<bool> {
+            with_request(|request| {
+                let method = method.parse().map_err(|err| {
+                    VmError::HostError(format!("Pingora request invalid method: {err}"))
+                })?;
+                request.set_method(method);
+                Ok(true)
+            })
+        }
+
+        pub(crate) fn request_set_method_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_set_method(args))
+        }
+
+        /// Calls Pingora RequestHeader::set_uri on the live request.
+        #[pd_host_function(name = "pingora::request::set_uri")]
+        pub(super) fn request_set_uri_impl(uri: &str) -> VmResult<bool> {
+            with_request(|request| {
+                let uri = uri.parse().map_err(|err| {
+                    VmError::HostError(format!("Pingora request invalid URI: {err}"))
+                })?;
+                request.set_uri(uri);
+                Ok(true)
+            })
+        }
+
+        pub(crate) fn request_set_uri_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(request_set_uri(args))
+        }
+
         /// Calls Pingora ResponseHeader::set_status on the live response.
         #[pd_host_function(name = "pingora::response::set_status")]
         pub(super) fn response_set_status_impl(status: i64) -> VmResult<bool> {
@@ -417,6 +547,23 @@ mod host {
             return_one(response_status(args))
         }
 
+        /// Reads a header from the live Pingora response.
+        #[pd_host_function(name = "pingora::response::header")]
+        pub(super) fn response_header_impl(name: &str) -> VmResult<String> {
+            with_response(|response| {
+                Ok(response
+                    .headers
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("")
+                    .to_string())
+            })
+        }
+
+        pub(crate) fn response_header_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(response_header(args))
+        }
+
         /// Calls Pingora ResponseHeader::insert_header on the live response.
         #[pd_host_function(name = "pingora::response::insert_header")]
         pub(super) fn response_insert_header_impl(name: &str, value: &str) -> VmResult<bool> {
@@ -433,6 +580,34 @@ mod host {
 
         pub(crate) fn response_insert_header_host(args: &[Value]) -> VmResult<CallOutcome> {
             return_one(response_insert_header(args))
+        }
+
+        /// Calls Pingora ResponseHeader::append_header on the live response.
+        #[pd_host_function(name = "pingora::response::append_header")]
+        pub(super) fn response_append_header_impl(name: &str, value: &str) -> VmResult<bool> {
+            ensure_script_header_allowed(name)?;
+            with_response(|response| {
+                response
+                    .append_header(name.to_string(), value.to_string())
+                    .map_err(|err| {
+                        VmError::HostError(format!("Pingora response append_header: {err}"))
+                    })
+            })
+        }
+
+        pub(crate) fn response_append_header_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(response_append_header(args))
+        }
+
+        /// Calls Pingora ResponseHeader::remove_header on the live response.
+        #[pd_host_function(name = "pingora::response::remove_header")]
+        pub(super) fn response_remove_header_impl(name: &str) -> VmResult<bool> {
+            ensure_script_header_allowed(name)?;
+            with_response(|response| Ok(response.remove_header(name).is_some()))
+        }
+
+        pub(crate) fn response_remove_header_host(args: &[Value]) -> VmResult<CallOutcome> {
+            return_one(response_remove_header(args))
         }
     }
 }

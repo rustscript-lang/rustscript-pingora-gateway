@@ -182,7 +182,7 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
 
     write_request(
         &mut downstream,
-        "GET /canary HTTP/1.1\r\nhost: gateway.test\r\nconnection: close\r\n\r\n",
+        "GET /canary?old=1 HTTP/1.1\r\nhost: gateway.test\r\nx-rustscript-rewrite: true\r\nx-remove-me: temporary\r\nconnection: close\r\n\r\n",
     );
     let forwarded = read_response_to_close(&mut downstream);
     let forwarded_lower = forwarded.to_ascii_lowercase();
@@ -194,6 +194,18 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
     );
     assert!(
         forwarded_lower.contains("x-rustscript-policy: gateway_policy"),
+        "{forwarded}"
+    );
+    assert!(
+        forwarded_lower.contains("x-rustscript-policy: rewritten"),
+        "{forwarded}"
+    );
+    assert!(
+        forwarded_lower.contains("x-original-target: /canary?old=1"),
+        "{forwarded}"
+    );
+    assert!(
+        !forwarded_lower.contains("x-remove-response:"),
         "{forwarded}"
     );
     assert!(
@@ -214,9 +226,25 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
         panic!("expected upstream request bytes");
     };
     let upstream_lower = upstream_request.to_ascii_lowercase();
-    assert!(upstream_request.starts_with("GET /canary HTTP/1.1"));
+    assert!(
+        upstream_request.starts_with("POST /rewritten?source=rustscript HTTP/1.1"),
+        "{upstream_request}"
+    );
     assert!(
         upstream_lower.contains("x-rustscript-checked: true"),
+        "{upstream_request}"
+    );
+    assert!(
+        upstream_lower.contains("x-original-query: old=1"),
+        "{upstream_request}"
+    );
+    assert_eq!(
+        upstream_lower.matches("x-request-value:").count(),
+        2,
+        "{upstream_request}"
+    );
+    assert!(
+        !upstream_lower.contains("x-remove-me:"),
         "{upstream_request}"
     );
     assert!(
