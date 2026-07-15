@@ -133,6 +133,7 @@ fn rustscript_calls_live_pingora_request_and_response_header_apis() {
             pingora::response::insert_header("x-first-response-value", first_response_value);
             pingora::response::insert_header("x-remove-me", "temporary");
             pingora::response::remove_header("x-remove-me");
+            pingora::response::insert_header("x-obs-text", "café");
             pingora::response::status();
         "#,
     )
@@ -192,6 +193,14 @@ fn rustscript_calls_live_pingora_request_and_response_header_apis() {
         "one"
     );
     assert!(!response.headers.contains_key("x-remove-me"));
+    assert_eq!(
+        response
+            .headers
+            .get("x-obs-text")
+            .expect("obs-text header should exist")
+            .as_bytes(),
+        "café".as_bytes()
+    );
 }
 
 #[test]

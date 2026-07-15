@@ -21,7 +21,7 @@ The project depends on the upstream `pingora` crate with its `proxy` feature. It
 
 ## Supported RustScript host API
 
-Every bound host below reads or mutates the live Pingora `RequestHeader` or `ResponseHeader`. Names follow the corresponding Pingora header fields and methods:
+Request hosts read or mutate the live Pingora `RequestHeader`. Response hosts mutate a per-request Pingora `ResponseHeader`; when the request is proxied, its headers are applied to the live upstream response in `ProxyHttp::response_filter`. Names follow the corresponding Pingora header fields and methods:
 
 | RustScript host | Pingora operation |
 | --- | --- |

@@ -1509,6 +1509,7 @@ name = "rustscript-pingora-gateway"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "http",
  "pd-host-function",
  "pd-vm",
  "pingora",

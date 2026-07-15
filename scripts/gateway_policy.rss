@@ -22,6 +22,7 @@ if path == "/admin" && tier != "pro" {
         pingora::request::set_uri("/rewritten?source=rustscript");
 
         pingora::response::insert_header("x-original-target", path + "?" + query);
+        pingora::response::insert_header("x-obs-text", "café");
         pingora::response::append_header("x-rustscript-policy", "rewritten");
         pingora::response::insert_header("x-remove-response", "temporary");
         pingora::response::remove_header("x-remove-response");

@@ -204,6 +204,7 @@ fn pingora_accepts_a_real_client_and_forwards_to_a_real_upstream_socket() {
         forwarded_lower.contains("x-original-target: /canary?old=1"),
         "{forwarded}"
     );
+    assert!(forwarded.contains("x-obs-text: café"), "{forwarded}");
     assert!(
         !forwarded_lower.contains("x-remove-response:"),
         "{forwarded}"

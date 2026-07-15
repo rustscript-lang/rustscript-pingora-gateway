@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashSet, net::SocketAddr};
 
 use async_trait::async_trait;
+use http::{HeaderName, HeaderValue};
 use pingora::{
     Error, ErrorType, Result as PingoraResult,
     http::{RequestHeader, ResponseHeader},
@@ -38,7 +39,7 @@ impl ScriptedGatewayPolicy {
 
 #[derive(Debug, Default)]
 pub struct RequestContext {
-    response_headers: Vec<(String, String)>,
+    response_headers: Vec<(HeaderName, HeaderValue)>,
 }
 
 #[derive(Debug, Clone)]
@@ -74,12 +75,7 @@ impl ProxyHttp for ScriptedProxy {
         ctx.response_headers = policy_response
             .headers
             .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|value| (name.as_str().to_string(), value.to_string()))
-            })
+            .map(|(name, value)| (name.clone(), value.clone()))
             .collect();
 
         if policy_response.status.as_u16() != 200 {
@@ -136,7 +132,7 @@ impl ProxyHttp for ScriptedProxy {
     ) -> PingoraResult<()> {
         let mut inserted = HashSet::new();
         for (name, value) in &ctx.response_headers {
-            let result = if inserted.insert(name.to_ascii_lowercase()) {
+            let result = if inserted.insert(name.clone()) {
                 upstream_response.insert_header(name.clone(), value.clone())
             } else {
                 upstream_response
