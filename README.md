@@ -36,12 +36,16 @@ Request hosts read or mutate the live Pingora `RequestHeader`. Response hosts mu
 | `pingora::request::remove_header` | `RequestHeader::remove_header()` |
 | `pingora::request::set_method` | `RequestHeader::set_method()` |
 | `pingora::request::set_uri` | `RequestHeader::set_uri()` |
+| `pingora::request::info` | named `PingoraRequest` snapshot (`method`, `path`, `query`, `uri`, `version`) |
+| `pingora::upstream::info` | named `PingoraUpstream` snapshot (`address`) |
 | `pingora::response::status` | `ResponseHeader.status` |
 | `pingora::response::set_status` | `ResponseHeader::set_status()` |
 | `pingora::response::header` | `ResponseHeader.headers.get()` |
 | `pingora::response::insert_header` | `ResponseHeader::insert_header()` |
 | `pingora::response::append_header` | `ResponseHeader::append_header()` |
 | `pingora::response::remove_header` | `ResponseHeader::remove_header()` |
+| `pingora::response::info` | named `PingoraResponse` snapshot (`status`) |
+| `pingora::policy::info` | named `PingoraPolicy` snapshot (`fuel`) |
 
 The gateway deliberately does not bind the old modeled `request::id`, `request::scheme`, `request::client_ip`, `request::port`, `tcp`, `tls`, `websocket`, `upstream::send`, or `proxy::pipe` APIs. Their implementations returned hard-coded metadata or changed only in-memory fixture state. Request and response body I/O is also omitted because Pingora exposes it asynchronously through the session and `ProxyHttp` lifecycle. Those operations cannot be implemented truthfully inside the synchronous policy VM host-call boundary.
 
@@ -76,9 +80,10 @@ The first request reaches the upstream after RustScript inserts `x-rustscript-ch
 ## Verification
 
 ```bash
-cargo test --test gateway_policy
-cargo test --test live_proxy -- --nocapture
-cargo clippy --all-targets -- -D warnings
+cargo test --test gateway_policy -- --test-threads=1
+cargo test --test host_descriptor_arch -- --test-threads=1
+cargo test --test live_proxy -- --nocapture --test-threads=1
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 `tests/live_proxy.rs` binds two real loopback sockets, launches the compiled Pingora gateway process, sends downstream HTTP requests, and records the bytes received by the upstream socket. It verifies that:
