@@ -7,9 +7,9 @@ license = "Apache-2.0"
 [dependencies]
 async-trait = "0.1"
 http = "1"
-pd-host-function = { path = "../rustscript/pd-host-function" }
+pd-host-function = { git = "https://github.com/rustscript-lang/rustscript", rev = "b1d6cffede77f49410bf63525f30b9a46b02dc01" }
 pingora = { version = "0.8.1", features = ["proxy"] }
-vm = { package = "pd-vm", path = "../rustscript", default-features = false, features = ["runtime"] }
+vm = { package = "pd-vm", git = "https://github.com/rustscript-lang/rustscript", rev = "b1d6cffede77f49410bf63525f30b9a46b02dc01", default-features = false, features = ["runtime"] }
 
 [dev-dependencies]
 pretty_assertions = "1"

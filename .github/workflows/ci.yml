@@ -17,24 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: rustscript-pingora-gateway
-      - uses: actions/checkout@v4
-        with:
-          repository: rustscript-lang/rustscript
-          path: rustscript
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - name: Format check
-        working-directory: rustscript-pingora-gateway
         run: cargo fmt --all -- --check
       - name: Clippy
-        working-directory: rustscript-pingora-gateway
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Policy unit tests
-        working-directory: rustscript-pingora-gateway
-        run: cargo test --test gateway_policy
+        run: cargo test --test gateway_policy -- --test-threads=1
+      - name: Host descriptor architecture
+        run: cargo test --test host_descriptor_arch -- --test-threads=1
       - name: Real Pingora proxy integration
-        working-directory: rustscript-pingora-gateway
-        run: cargo test --test live_proxy -- --nocapture
+        run: cargo test --test live_proxy -- --nocapture --test-threads=1
