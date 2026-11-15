@@ -7,7 +7,7 @@ use rustscript_pingora_gateway::{
 };
 use vm::{HostTypeSchema, catalog_import_schemas};
 
-const PINGORA_CATALOG_FINGERPRINT: &str = "acce09bcf50364cc";
+const PINGORA_CATALOG_FINGERPRINT: &str = "9f210dee463c0143";
 
 const PRODUCTION_FUNCTION_NAMES: &[&str] = &[
     "pingora::request::method",
